@@ -1,0 +1,191 @@
+// InstaYa! — Esquema de base de datos (PostgreSQL)
+// Multi-tenant: cada PYME (empresa) tiene sus datos aislados.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN    // Dueño del negocio: acceso total
+  EMPLEADO // Personal: operación diaria limitada
+}
+
+enum MovementType {
+  ENTRADA
+  SALIDA
+  AJUSTE
+}
+
+enum SaleStatus {
+  COMPLETADA
+  ANULADA
+}
+
+// ============ MULTI-TENANT ============
+
+model Empresa {
+  id        String    @id @default(cuid())
+  nombre    String
+  giro      String?   // abarrotes, ferretería, boutique, repuestos...
+  direccion String?
+  telefono  String?
+  email     String?   @unique
+  activa    Boolean   @default(true)
+  trialFin  DateTime? // fin de prueba gratuita 15 días
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  usuarios    Usuario[]
+  productos   Producto[]
+  categorias  Categoria[]
+  proveedores Proveedor[]
+  ventas      Venta[]
+  movimientos MovimientoStock[]
+
+  @@map("empresas")
+}
+
+// ============ AUTH / USUARIOS ============
+
+model Usuario {
+  id           String   @id @default(cuid())
+  empresaId    String
+  nombre       String
+  email        String
+  passwordHash String
+  rol          Role     @default(EMPLEADO)
+  activo       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  empresa Empresa @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+
+  movimientosCreados MovimientoStock[] @relation("movimientosCreados")
+  ventasCreadas       Venta[]           @relation("ventasCreadas")
+
+  @@unique([empresaId, email])
+  @@index([empresaId])
+  @@map("usuarios")
+}
+
+// ============ INVENTARIO ============
+
+model Categoria {
+  id        String   @id @default(cuid())
+  empresaId String
+  nombre    String
+  descripcion String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  empresa   Empresa   @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  productos Producto[]
+
+  @@unique([empresaId, nombre])
+  @@index([empresaId])
+  @@map("categorias")
+}
+
+model Producto {
+  id          String   @id @default(cuid())
+  empresaId   String
+  categoriaId String?
+  proveedorId String?
+  nombre      String
+  sku         String?
+  descripcion String?
+  precioCompra Decimal  @db.Decimal(10, 2)
+  precioVenta Decimal  @db.Decimal(10, 2)
+  stockActual Int      @default(0)
+  stockMinimo Int      @default(0)
+  activo      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  empresa    Empresa           @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  categoria  Categoria?        @relation(fields: [categoriaId], references: [id], onDelete: SetNull)
+  proveedor  Proveedor?        @relation(fields: [proveedorId], references: [id], onDelete: SetNull)
+  movimientos MovimientoStock[]
+  ventaItems VentaItem[]
+
+  @@unique([empresaId, sku])
+  @@index([empresaId])
+  @@map("productos")
+}
+
+model Proveedor {
+  id        String   @id @default(cuid())
+  empresaId String
+  nombre    String
+  telefono  String?
+  email     String?
+  direccion String?
+  activo    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  empresa   Empresa   @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  productos Producto[]
+
+  @@unique([empresaId, nombre])
+  @@index([empresaId])
+  @@map("proveedores")
+}
+
+model MovimientoStock {
+  id          String       @id @default(cuid())
+  empresaId   String
+  productoId  String
+  tipo        MovementType
+  cantidad    Int
+  motivo      String?
+  creadoPorId String
+  createdAt   DateTime     @default(now())
+
+  empresa  Empresa  @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  producto Producto @relation(fields: [productoId], references: [id], onDelete: Restrict)
+  creadoPor Usuario @relation("movimientosCreados", fields: [creadoPorId], references: [id], onDelete: Restrict)
+
+  @@index([empresaId, productoId])
+  @@map("movimientos_stock")
+}
+
+// ============ VENTAS ============
+
+model Venta {
+  id          String     @id @default(cuid())
+  empresaId   String
+  cliente     String?
+  total       Decimal    @db.Decimal(10, 2)
+  status      SaleStatus @default(COMPLETADA)
+  creadoPorId String
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  empresa   Empresa    @relation(fields: [empresaId], references: [id], onDelete: Cascade)
+  creadoPor Usuario    @relation("ventasCreadas", fields: [creadoPorId], references: [id], onDelete: Restrict)
+  items     VentaItem[]
+
+  @@index([empresaId])
+  @@map("ventas")
+}
+
+model VentaItem {
+  id         String  @id @default(cuid())
+  ventaId    String
+  productoId String
+  cantidad   Int
+  precioUnit Decimal @db.Decimal(10, 2)
+  subtotal   Decimal @db.Decimal(10, 2)
+
+  venta    Venta    @relation(fields: [ventaId], references: [id], onDelete: Cascade)
+  producto Producto @relation(fields: [productoId], references: [id], onDelete: Restrict)
+
+  @@index([ventaId])
+  @@map("venta_items")
+}
