@@ -1,5 +1,6 @@
-import { Router, Request, Response, NextFunction } from "express";
+import { Router } from "express";
 import prisma from "../lib/prisma";
+import { asyncHandler } from "../lib/asyncHandler";
 import { authenticate } from "../middleware/auth";
 
 const router = Router();
@@ -14,15 +15,17 @@ function desde(rango: string): Date {
 }
 
 // GET /api/reportes/resumen?rango=hoy|semana|mes
-router.get("/resumen", async (req: Request, res: Response, next: NextFunction) => {
-  try {
+router.get(
+  "/resumen",
+  asyncHandler(async (req, res) => {
     const { empresaId } = req.user!;
     const rango = typeof req.query.rango === "string" ? req.query.rango : "hoy";
-    const [productos, ventas] = await Promise.all([
+    const [productos, ventas, numeroMovimientos] = await Promise.all([
       prisma.producto.findMany({ where: { empresaId, activo: true } }),
       prisma.venta.findMany({
         where: { empresaId, status: "COMPLETADA", createdAt: { gte: desde(rango) } },
       }),
+      prisma.movimientoStock.count({ where: { empresaId, createdAt: { gte: desde(rango) } } }),
     ]);
     res.json({
       rango,
@@ -31,10 +34,9 @@ router.get("/resumen", async (req: Request, res: Response, next: NextFunction) =
       valorInventario: productos.reduce((s, p) => s + Number(p.precioCompra) * p.stockActual, 0),
       numeroVentas: ventas.length,
       totalVentas: ventas.reduce((s, v) => s + Number(v.total), 0),
+      numeroMovimientos,
     });
-  } catch (err) {
-    next(err);
-  }
-});
+  })
+);
 
 export default router;

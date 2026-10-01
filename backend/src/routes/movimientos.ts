@@ -1,6 +1,7 @@
-import { Router, Request, Response, NextFunction } from "express";
+import { Router } from "express";
 import { z } from "zod";
 import prisma from "../lib/prisma";
+import { asyncHandler } from "../lib/asyncHandler";
 import { authenticate } from "../middleware/auth";
 import { AppError } from "../middleware/error";
 
@@ -16,8 +17,9 @@ const movimientoSchema = z.object({
 });
 
 // GET /api/movimientos?productoId=
-router.get("/", async (req: Request, res: Response, next: NextFunction) => {
-  try {
+router.get(
+  "/",
+  asyncHandler(async (req, res) => {
     const productoId = typeof req.query.productoId === "string" ? req.query.productoId : undefined;
     const movimientos = await prisma.movimientoStock.findMany({
       where: { empresaId: req.user!.empresaId, ...(productoId ? { productoId } : {}) },
@@ -26,13 +28,12 @@ router.get("/", async (req: Request, res: Response, next: NextFunction) => {
       take: 200,
     });
     res.json({ movimientos });
-  } catch (err) {
-    next(err);
-  }
-});
+  })
+);
 
-router.post("/", async (req: Request, res: Response, next: NextFunction) => {
-  try {
+router.post(
+  "/",
+  asyncHandler(async (req, res) => {
     const data = movimientoSchema.parse(req.body);
     if (data.tipo !== "AJUSTE" && data.cantidad < 1) {
       throw new AppError(400, "La cantidad debe ser mayor a 0");
@@ -66,10 +67,7 @@ router.post("/", async (req: Request, res: Response, next: NextFunction) => {
     });
 
     res.status(201).json({ movimiento });
-  } catch (err) {
-    if (err instanceof z.ZodError) return next(new AppError(400, err.errors[0].message));
-    next(err);
-  }
-});
+  })
+);
 
 export default router;

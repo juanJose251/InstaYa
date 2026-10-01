@@ -1,7 +1,8 @@
-import { Router, Request, Response, NextFunction } from "express";
+import { Router } from "express";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import prisma from "../lib/prisma";
+import { asyncHandler } from "../lib/asyncHandler";
 import { authenticate } from "../middleware/auth";
 import { AppError } from "../middleware/error";
 
@@ -20,8 +21,9 @@ const ventaSchema = z
   })
   .refine((v) => v.items || v.total, { message: "Indica el total o los productos vendidos" });
 
-router.get("/", async (req: Request, res: Response, next: NextFunction) => {
-  try {
+router.get(
+  "/",
+  asyncHandler(async (req, res) => {
     const ventas = await prisma.venta.findMany({
       where: { empresaId: req.user!.empresaId },
       include: { items: { include: { producto: { select: { nombre: true } } } } },
@@ -29,13 +31,12 @@ router.get("/", async (req: Request, res: Response, next: NextFunction) => {
       take: 200,
     });
     res.json({ ventas });
-  } catch (err) {
-    next(err);
-  }
-});
+  })
+);
 
-router.post("/", async (req: Request, res: Response, next: NextFunction) => {
-  try {
+router.post(
+  "/",
+  asyncHandler(async (req, res) => {
     const data = ventaSchema.parse(req.body);
     const { empresaId, id: userId } = req.user!;
 
@@ -74,15 +75,13 @@ router.post("/", async (req: Request, res: Response, next: NextFunction) => {
     });
 
     res.status(201).json({ venta });
-  } catch (err) {
-    if (err instanceof z.ZodError) return next(new AppError(400, err.errors[0].message));
-    next(err);
-  }
-});
+  })
+);
 
 // Anular: marca ANULADA y repone el stock de los items
-router.post("/:id/anular", async (req: Request, res: Response, next: NextFunction) => {
-  try {
+router.post(
+  "/:id/anular",
+  asyncHandler(async (req, res) => {
     const { empresaId, id: userId } = req.user!;
     const venta = await prisma.$transaction(async (tx) => {
       const v = await tx.venta.findFirst({ where: { id: req.params.id, empresaId }, include: { items: true } });
@@ -100,9 +99,7 @@ router.post("/:id/anular", async (req: Request, res: Response, next: NextFunctio
       return tx.venta.update({ where: { id: v.id }, data: { status: "ANULADA" } });
     });
     res.json({ venta });
-  } catch (err) {
-    next(err);
-  }
-});
+  })
+);
 
 export default router;

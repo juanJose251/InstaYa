@@ -1,7 +1,8 @@
-import { Router, Request, Response, NextFunction } from "express";
+import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import prisma from "../lib/prisma";
+import { asyncHandler } from "../lib/asyncHandler";
 import { signToken } from "../middleware/auth";
 import { AppError } from "../middleware/error";
 
@@ -27,8 +28,9 @@ const loginSchema = z.object({
 });
 
 // POST /api/auth/register — crea una empresa + su usuario ADMIN (trial 15 días)
-router.post("/register", async (req: Request, res: Response, next: NextFunction) => {
-  try {
+router.post(
+  "/register",
+  asyncHandler(async (req, res) => {
     const parsed = registerSchema.parse(req.body);
     const { empresa, admin } = parsed;
 
@@ -82,17 +84,13 @@ router.post("/register", async (req: Request, res: Response, next: NextFunction)
         trialFin: empresaCreada.trialFin,
       },
     });
-  } catch (err) {
-    if (err instanceof z.ZodError) {
-      return next(new AppError(400, err.errors[0].message));
-    }
-    next(err);
-  }
-});
+  })
+);
 
 // POST /api/auth/login
-router.post("/login", async (req: Request, res: Response, next: NextFunction) => {
-  try {
+router.post(
+  "/login",
+  asyncHandler(async (req, res) => {
     const parsed = loginSchema.parse(req.body);
     const email = parsed.email.toLowerCase();
 
@@ -129,12 +127,7 @@ router.post("/login", async (req: Request, res: Response, next: NextFunction) =>
       usuario: { id: usuario.id, nombre: usuario.nombre, email: usuario.email, rol: usuario.rol },
       empresa: { id: usuario.empresa.id, nombre: usuario.empresa.nombre, trialFin: usuario.empresa.trialFin },
     });
-  } catch (err) {
-    if (err instanceof z.ZodError) {
-      return next(new AppError(400, err.errors[0].message));
-    }
-    next(err);
-  }
-});
+  })
+);
 
 export default router;
