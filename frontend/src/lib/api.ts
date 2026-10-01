@@ -1,3 +1,8 @@
+import { demoRequest } from "./demoApi";
+
+// Demo pública: sin servidor, los datos viven en el navegador (ver demoApi.ts).
+export const DEMO = import.meta.env.VITE_DEMO === "true";
+
 const TOKEN_KEY = "instaya_token";
 
 export function getToken(): string | null {
@@ -21,6 +26,16 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  if (DEMO) {
+    const body = typeof options.body === "string" ? JSON.parse(options.body) : undefined;
+    try {
+      return (await demoRequest(options.method ?? "GET", path, body)) as T;
+    } catch (err) {
+      const status = (err as { status?: number }).status ?? 500;
+      throw new ApiError(status, err instanceof Error ? err.message : "Error");
+    }
+  }
+
   const token = getToken();
   const headers: Record<string, string> = {
     "Content-Type": "application/json",

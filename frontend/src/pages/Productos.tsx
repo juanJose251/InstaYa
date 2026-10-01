@@ -102,7 +102,7 @@ export default function Productos() {
       {error && (
         <div className="mb-4">
           <Alert tone="warning">
-            No se pudo cargar: {error}. Verifica que el backend tenga el módulo de inventario (Fase 2).
+            No se pudo cargar: {error}. Revisa tu conexión e inténtalo de nuevo.
           </Alert>
         </div>
       )}

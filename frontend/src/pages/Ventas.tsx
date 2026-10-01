@@ -81,7 +81,7 @@ export default function Ventas() {
       {error && (
         <div className="mb-4">
           <Alert tone="warning">
-            No se pudo cargar: {error}. El módulo de ventas se implementa en Fase 3 del backend.
+            No se pudo cargar: {error}. Revisa tu conexión e inténtalo de nuevo.
           </Alert>
         </div>
       )}

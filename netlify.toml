@@ -1,0 +1,13 @@
+# Demo publica del frontend: sin backend, los datos viven en el navegador (VITE_DEMO).
+[build]
+  base = "frontend"
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  VITE_DEMO = "true"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

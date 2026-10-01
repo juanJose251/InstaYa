@@ -2,12 +2,24 @@ import { useState } from "react";
 import PageHeader from "../components/ui/PageHeader";
 import Card from "../components/ui/Card";
 import Alert from "../components/ui/Alert";
+import { useData } from "../hooks/useData";
 
 type Rango = "hoy" | "semana" | "mes";
 
+interface Resumen {
+  totalProductos: number;
+  stockBajo: number;
+  valorInventario: number;
+  numeroVentas: number;
+  totalVentas: number;
+  numeroMovimientos?: number;
+}
+
+const dinero = (n?: number) => "$" + (n ?? 0).toFixed(2);
+
 export default function Reportes() {
   const [rango, setRango] = useState<Rango>("hoy");
-  const [msg] = useState("");
+  const { data, cargando, error } = useData<Resumen>(`/reportes/resumen?rango=${rango}`);
 
   return (
     <div>
@@ -29,11 +41,13 @@ export default function Reportes() {
         ))}
       </div>
 
-      {msg && (
+      {error && (
         <div className="mb-4">
-          <Alert tone="info">{msg}</Alert>
+          <Alert tone="warning">No se pudo cargar el resumen: {error}</Alert>
         </div>
       )}
+
+      {cargando && <p className="py-4 text-center text-sm text-slate-500">Cargando...</p>}
 
       <div className="space-y-3">
         <Card className="flex items-center justify-between">
@@ -41,37 +55,31 @@ export default function Reportes() {
             <p className="font-semibold text-slate-900">Ventas ({rango})</p>
             <p className="text-xs text-slate-500">Total de dinero generado</p>
           </div>
-          <p className="text-lg font-bold text-brand-700">$0.00</p>
+          <p className="text-lg font-bold text-brand-700">{dinero(data?.totalVentas)}</p>
         </Card>
         <Card className="flex items-center justify-between">
           <div>
             <p className="font-semibold text-slate-900">Valor del inventario</p>
             <p className="text-xs text-slate-500">Suma de precio de compra × stock</p>
           </div>
-          <p className="text-lg font-bold text-brand-700">$0.00</p>
+          <p className="text-lg font-bold text-brand-700">{dinero(data?.valorInventario)}</p>
         </Card>
         <Card className="flex items-center justify-between">
           <div>
             <p className="font-semibold text-slate-900">Productos con stock bajo</p>
             <p className="text-xs text-slate-500">Igual o menor al stock mínimo</p>
           </div>
-          <p className="text-lg font-bold text-accent-600">0</p>
+          <p className="text-lg font-bold text-accent-600">{data?.stockBajo ?? 0}</p>
         </Card>
         <Card className="flex items-center justify-between">
           <div>
             <p className="font-semibold text-slate-900">Movimientos registrados</p>
             <p className="text-xs text-slate-500">Entradas y salidas ({rango})</p>
           </div>
-          <p className="text-lg font-bold text-brand-700">0</p>
+          <p className="text-lg font-bold text-brand-700">{data?.numeroMovimientos ?? 0}</p>
         </Card>
       </div>
 
-      <div className="mt-4">
-        <Alert tone="info">
-          Los reportes se calcularán con datos reales cuando el backend exponga los módulos de
-          inventario (Fase 2) y ventas (Fase 3).
-        </Alert>
-      </div>
     </div>
   );
 }

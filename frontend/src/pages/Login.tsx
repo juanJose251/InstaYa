@@ -4,12 +4,14 @@ import { useAuth } from "../context/AuthContext";
 import Button from "../components/ui/Button";
 import Input from "../components/ui/Input";
 import Alert from "../components/ui/Alert";
+import { DEMO } from "../lib/api";
+import { DEMO_EMAIL, DEMO_PASSWORD } from "../lib/demoApi";
 
 export default function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [email, setEmail] = useState(DEMO ? DEMO_EMAIL : "");
+  const [password, setPassword] = useState(DEMO ? DEMO_PASSWORD : "");
   const [error, setError] = useState("");
   const [cargando, setCargando] = useState(false);
 
@@ -40,6 +42,13 @@ export default function Login() {
 
         <form onSubmit={onSubmit} className="rounded-2xl bg-white p-6 shadow-xl">
           <h2 className="mb-4 text-lg font-bold text-slate-900">Iniciar sesión</h2>
+          {DEMO && (
+            <div className="mb-4">
+              <Alert tone="info">
+                Demo pública: los datos se guardan solo en tu navegador. Ya están cargadas las credenciales de la cuenta demo.
+              </Alert>
+            </div>
+          )}
           {error && (
             <div className="mb-4">
               <Alert tone="error">{error}</Alert>
