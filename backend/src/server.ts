@@ -5,6 +5,10 @@ import { env } from "./config/env";
 import { errorHandler, notFound } from "./middleware/error";
 import authRoutes from "./routes/auth";
 import usuarioRoutes from "./routes/usuarios";
+import productoRoutes from "./routes/productos";
+import movimientoRoutes from "./routes/movimientos";
+import ventaRoutes from "./routes/ventas";
+import reporteRoutes from "./routes/reportes";
 
 const app = express();
 
@@ -20,6 +24,10 @@ app.get("/api/health", (_req, res) => {
 // Rutas
 app.use("/api/auth", authRoutes);
 app.use("/api/usuarios", usuarioRoutes);
+app.use("/api/productos", productoRoutes);
+app.use("/api/movimientos", movimientoRoutes);
+app.use("/api/ventas", ventaRoutes);
+app.use("/api/reportes", reporteRoutes);
 
 // 404 y errores
 app.use(notFound);
