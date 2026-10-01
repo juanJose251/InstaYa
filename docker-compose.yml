@@ -1,0 +1,16 @@
+# PostgreSQL local para desarrollo: `docker compose up -d`
+# Coincide con DATABASE_URL de backend/.env.example.
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: instaya
+    ports:
+      - "5432:5432"
+    volumes:
+      - instaya-db:/var/lib/postgresql/data
+
+volumes:
+  instaya-db:
