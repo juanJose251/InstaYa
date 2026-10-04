@@ -62,6 +62,9 @@ const daysAgo = (d: number, hour = 10) => {
   const date = new Date();
   date.setDate(date.getDate() - d);
   date.setHours(hour, 0, 0, 0);
+  // los datos sembrados de hoy nunca deben quedar en el futuro (p. ej. si se abre la demo a las 3:00)
+  const now = Date.now();
+  if (date.getTime() > now) return new Date(now - (hour + 1) * 60_000).toISOString();
   return date.toISOString();
 };
 

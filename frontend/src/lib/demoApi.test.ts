@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { demoRequest, resetDemoDb, DEMO_EMAIL, DEMO_PASSWORD } from "./demoApi";
 
 type Json = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -115,5 +115,19 @@ describe("demoApi: ventas y reportes", () => {
 
   it("ruta desconocida: 404", async () => {
     await expect(get("/nada")).rejects.toMatchObject({ status: 404 });
+  });
+});
+
+describe("demoApi: datos sembrados de hoy", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("a primera hora del día no hay ventas en el futuro y la nueva sale primero", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 9, 4, 3, 0, 0));
+    resetDemoDb();
+    await post("/ventas", { cliente: "Prueba", total: 5 });
+    const { ventas } = await get("/ventas");
+    expect(ventas[0]).toMatchObject({ cliente: "Prueba" });
+    expect(ventas.every((v: Json) => new Date(v.createdAt).getTime() <= Date.now())).toBe(true);
   });
 });
