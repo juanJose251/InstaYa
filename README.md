@@ -4,7 +4,7 @@
 
 Multi-tenant inventory management system for small businesses in El Salvador. Team project at ITCA-FEPADE, where I am the tech lead.
 
-**Demo:** deploy the `frontend/` folder to Netlify (the included `netlify.toml` already sets `VITE_DEMO=true`). Log in with `demo@instaya.app` / `demo1234`. The demo runs fully in the browser with sample data; there is no live backend (see [Architecture](#architecture)). The full stack runs locally with one command (see [Run it](#run-it-locally)).
+**Live demo: https://instaya-demo.netlify.app** (built from `frontend/` with `VITE_DEMO=true`, see `netlify.toml`). Log in with `demo@instaya.app` / `demo1234`. The demo runs fully in the browser with sample data; there is no live backend (see [Architecture](#architecture)). The full stack runs locally with one command (see [Run it](#run-it-locally)).
 
 <p>
   <img src="docs/screenshots/dashboard.png" width="24%" alt="Dashboard with KPIs and the restock assistant" />

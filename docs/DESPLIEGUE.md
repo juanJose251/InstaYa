@@ -1,6 +1,6 @@
 # Despliegue
 
-> Estado: **la demo del frontend sí se puede publicar; el backend aún no está desplegado.** Este documento es el plan, no un registro de algo que ya esté en producción.
+> Estado: **la demo del frontend está publicada en https://instaya-demo.netlify.app; el backend aún no está desplegado.** Este documento es el plan, no un registro de algo que ya esté en producción.
 
 ## 1. Demo pública (sin servidor) — Netlify
 
