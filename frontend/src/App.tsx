@@ -10,6 +10,7 @@ import Movimientos from "./pages/Movimientos";
 import Ventas from "./pages/Ventas";
 import Reportes from "./pages/Reportes";
 import Configuracion from "./pages/Configuracion";
+import Catalogo from "./pages/Catalogo";
 
 function Splash() {
   return (
@@ -50,6 +51,7 @@ export default function App() {
         <Route path="productos" element={<Productos />} />
         <Route path="movimientos" element={<Movimientos />} />
         <Route path="ventas" element={<Ventas />} />
+        <Route path="catalogo" element={<Catalogo />} />
         <Route path="reportes" element={<Reportes />} />
         <Route path="config" element={<Configuracion />} />
       </Route>

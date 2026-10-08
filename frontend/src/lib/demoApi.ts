@@ -5,11 +5,28 @@
  * y mismas reglas: stock suficiente, anulación que repone stock, etc.) guardando todo
  * en localStorage. Así la demo funciona sin servidor ni base de datos.
  */
+import { calcularSugerencias, resumenPorReglas, VENTANA_DIAS } from "./reposicion";
+
+interface DemoCategoria {
+  id: string;
+  nombre: string;
+  descripcion?: string;
+}
+
+interface DemoProveedor {
+  id: string;
+  nombre: string;
+  telefono?: string;
+  email?: string;
+  direccion?: string;
+}
 
 interface DemoProducto {
   id: string;
   nombre: string;
   sku?: string;
+  categoriaId?: string;
+  proveedorId?: string;
   precioCompra: string;
   precioVenta: string;
   stockActual: number;
@@ -27,15 +44,25 @@ interface DemoMovimiento {
   creadoPor: { nombre: string };
 }
 
+interface DemoVentaItem {
+  productoId: string;
+  cantidad: number;
+  precioUnit: string;
+  subtotal: string;
+}
+
 interface DemoVenta {
   id: string;
   cliente?: string;
   total: string;
   status: "COMPLETADA" | "ANULADA";
   createdAt: string;
+  items: DemoVentaItem[];
 }
 
 interface DemoDb {
+  categorias: DemoCategoria[];
+  proveedores: DemoProveedor[];
   productos: DemoProducto[];
   movimientos: DemoMovimiento[];
   ventas: DemoVenta[];
@@ -44,7 +71,8 @@ interface DemoDb {
 export const DEMO_EMAIL = "demo@instaya.app";
 export const DEMO_PASSWORD = "demo1234";
 
-const DB_KEY = "instaya_demo_db";
+// v2: la forma de los datos cambió (categorías, proveedores, ventas con items)
+const DB_KEY = "instaya_demo_db_v2";
 const DEMO_USER = { id: "demo-user", nombre: "Dueña Demo", email: DEMO_EMAIL, rol: "ADMIN" as const };
 const DEMO_EMPRESA = { id: "demo-empresa", nombre: "Abarrotería La Esperanza (demo)" };
 
@@ -69,44 +97,67 @@ const daysAgo = (d: number, hour = 10) => {
 };
 
 export function buildDemoDb(): DemoDb {
-  const seed: [string, string, number, number, number, number][] = [
-    ["Arroz 5 lb", "ARZ-5LB", 2.6, 3.5, 40, 10],
-    ["Frijoles rojos 1 lb", "FRJ-1LB", 0.7, 1.1, 60, 15],
-    ["Aceite 900 ml", "ACE-900", 2.4, 3.25, 8, 10],
-    ["Azúcar 2 lb", "AZU-2LB", 1.0, 1.6, 35, 10],
-    ["Leche 1 L", "LEC-1L", 0.9, 1.35, 4, 12],
-    ["Huevos (docena)", "HUE-12", 2.2, 3.0, 20, 6],
-    ["Detergente 1 kg", "DET-1KG", 2.7, 3.75, 15, 5],
-    ["Agua 1 L", "AGU-1L", 0.5, 0.8, 90, 20],
+  const categorias: DemoCategoria[] = ["Granos", "Abarrotes", "Lácteos", "Limpieza", "Bebidas"].map((nombre, i) => ({
+    id: `demo-cat-${i + 1}`,
+    nombre,
+  }));
+  const proveedores: DemoProveedor[] = [
+    { id: "demo-prov-1", nombre: "Distribuidora Central", telefono: "2222-1111" },
+    { id: "demo-prov-2", nombre: "Lácteos El Pastor", telefono: "2222-2222" },
+    { id: "demo-prov-3", nombre: "Embotelladora Nacional", telefono: "2222-3333" },
   ];
-  const productos: DemoProducto[] = seed.map(([nombre, sku, compra, venta, stock, min], i) => ({
+
+  // [nombre, sku, categoría, proveedor, compra, venta, stock, mínimo]
+  const seed: [string, string, number, number, number, number, number, number][] = [
+    ["Arroz 5 lb", "ARZ-5LB", 1, 1, 2.6, 3.5, 40, 10],
+    ["Frijoles rojos 1 lb", "FRJ-1LB", 1, 1, 0.7, 1.1, 60, 15],
+    ["Aceite 900 ml", "ACE-900", 2, 1, 2.4, 3.25, 8, 10],
+    ["Azúcar 2 lb", "AZU-2LB", 2, 1, 1.0, 1.6, 35, 10],
+    ["Leche 1 L", "LEC-1L", 3, 2, 0.9, 1.35, 4, 12],
+    ["Huevos (docena)", "HUE-12", 3, 2, 2.2, 3.0, 20, 6],
+    ["Detergente 1 kg", "DET-1KG", 4, 1, 2.7, 3.75, 15, 5],
+    ["Agua 1 L", "AGU-1L", 5, 3, 0.5, 0.8, 90, 20],
+  ];
+  const productos: DemoProducto[] = seed.map(([nombre, sku, cat, prov, compra, venta, stock, min], i) => ({
     id: `demo-prod-${i + 1}`,
     nombre,
     sku,
+    categoriaId: `demo-cat-${cat}`,
+    proveedorId: `demo-prov-${prov}`,
     precioCompra: money(compra),
     precioVenta: money(venta),
     stockActual: stock,
     stockMinimo: min,
   }));
 
-  const ventasSeed: [number, number, string?][] = [
-    [0, 12.5, "Doña Marta"],
-    [0, 4.6],
-    [1, 18.2, "Tienda Don Beto"],
-    [2, 7.35],
-    [3, 22.1, "Cliente mayorista"],
-    [5, 9.8],
-    [8, 15.4],
-    [15, 31.0, "Tienda Don Beto"],
-    [24, 11.25],
+  // [días atrás, cliente, [[producto #, cantidad], ...]]
+  const ventasSeed: [number, string | undefined, [number, number][]][] = [
+    [0, "Doña Marta", [[1, 2], [8, 3], [6, 1]]],
+    [0, undefined, [[5, 2], [2, 4]]],
+    [1, "Tienda Don Beto", [[1, 4], [4, 5]]],
+    [2, undefined, [[5, 3], [3, 6]]],
+    [3, "Cliente mayorista", [[8, 12], [2, 10]]],
+    [5, undefined, [[7, 2], [5, 2]]],
+    [8, undefined, [[1, 3], [8, 6]]],
+    [12, undefined, [[5, 6], [4, 2], [3, 5]]],
+    [15, "Tienda Don Beto", [[2, 12], [1, 8]]],
+    [20, undefined, [[5, 8], [6, 3], [3, 4]]],
+    [24, undefined, [[8, 10], [7, 1]]],
   ];
-  const ventas: DemoVenta[] = ventasSeed.map(([d, total, cliente], i) => ({
-    id: `demo-venta-${i + 1}`,
-    cliente,
-    total: money(total),
-    status: "COMPLETADA",
-    createdAt: daysAgo(d, 9 + (i % 8)),
-  }));
+  const ventas: DemoVenta[] = ventasSeed.map(([d, cliente, lineas], i) => {
+    const items = lineas.map(([n, cantidad]) => {
+      const precio = Number(productos[n - 1].precioVenta);
+      return { productoId: `demo-prod-${n}`, cantidad, precioUnit: money(precio), subtotal: money(precio * cantidad) };
+    });
+    return {
+      id: `demo-venta-${i + 1}`,
+      cliente,
+      total: money(items.reduce((s, it) => s + Number(it.subtotal), 0)),
+      status: "COMPLETADA" as const,
+      createdAt: daysAgo(d, 9 + (i % 8)),
+      items,
+    };
+  });
 
   const movimientos: DemoMovimiento[] = [
     ["demo-prod-1", "ENTRADA", 50, "Compra a proveedor", 6],
@@ -124,7 +175,7 @@ export function buildDemoDb(): DemoDb {
     creadoPor: { nombre: DEMO_USER.nombre },
   }));
 
-  return { productos, movimientos, ventas };
+  return { categorias, proveedores, productos, movimientos, ventas };
 }
 
 function loadDb(): DemoDb {
@@ -161,6 +212,17 @@ function rangeStart(rango: string): Date {
 
 type Body = Record<string, unknown>;
 
+const text = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : undefined);
+
+/** Productos con los nombres de su categoría y proveedor, como los devuelve el backend. */
+function conRelaciones(db: DemoDb, p: DemoProducto) {
+  return {
+    ...p,
+    categoria: p.categoriaId ? { nombre: db.categorias.find((c) => c.id === p.categoriaId)?.nombre } : null,
+    proveedor: p.proveedorId ? { nombre: db.proveedores.find((c) => c.id === p.proveedorId)?.nombre } : null,
+  };
+}
+
 /** Equivalente a `request()` de api.ts, pero contra la "BD" local. */
 export async function demoRequest(method: string, path: string, body?: Body): Promise<unknown> {
   const [pathname, queryString = ""] = path.split("?");
@@ -181,6 +243,65 @@ export async function demoRequest(method: string, path: string, body?: Body): Pr
     return { usuario: DEMO_USER };
   }
 
+  // --- Categorías y proveedores ---
+  if (pathname === "/categorias" && method === "GET") {
+    const categorias = [...db.categorias]
+      .sort((a, b) => a.nombre.localeCompare(b.nombre))
+      .map((c) => ({ ...c, _count: { productos: db.productos.filter((p) => p.categoriaId === c.id).length } }));
+    return { categorias };
+  }
+  if (pathname === "/categorias" && method === "POST") {
+    const nombre = text(body?.nombre);
+    if (!nombre) throw new DemoError(400, "Nombre requerido");
+    if (db.categorias.some((c) => c.nombre.toLowerCase() === nombre.toLowerCase())) {
+      throw new DemoError(409, "Ya existe un registro con ese valor único (por ejemplo, el SKU)");
+    }
+    const categoria: DemoCategoria = { id: newId(), nombre, descripcion: text(body?.descripcion) };
+    db.categorias.push(categoria);
+    saveDb(db);
+    return { categoria };
+  }
+  const catId = pathname.match(/^\/categorias\/([^/]+)$/)?.[1];
+  if (catId && method === "DELETE") {
+    if (!db.categorias.some((c) => c.id === catId)) throw new DemoError(404, "Categoría no encontrada");
+    db.categorias = db.categorias.filter((c) => c.id !== catId);
+    db.productos.forEach((p) => {
+      if (p.categoriaId === catId) p.categoriaId = undefined; // onDelete: SetNull
+    });
+    saveDb(db);
+    return {};
+  }
+
+  if (pathname === "/proveedores" && method === "GET") {
+    const proveedores = [...db.proveedores]
+      .sort((a, b) => a.nombre.localeCompare(b.nombre))
+      .map((c) => ({ ...c, _count: { productos: db.productos.filter((p) => p.proveedorId === c.id).length } }));
+    return { proveedores };
+  }
+  if (pathname === "/proveedores" && method === "POST") {
+    const nombre = text(body?.nombre);
+    if (!nombre) throw new DemoError(400, "Nombre requerido");
+    const email = text(body?.email);
+    if (email && !/^\S+@\S+\.\S+$/.test(email)) throw new DemoError(400, "Correo inválido");
+    if (db.proveedores.some((c) => c.nombre.toLowerCase() === nombre.toLowerCase())) {
+      throw new DemoError(409, "Ya existe un registro con ese valor único (por ejemplo, el SKU)");
+    }
+    const proveedor: DemoProveedor = { id: newId(), nombre, telefono: text(body?.telefono), email, direccion: text(body?.direccion) };
+    db.proveedores.push(proveedor);
+    saveDb(db);
+    return { proveedor };
+  }
+  const provId = pathname.match(/^\/proveedores\/([^/]+)$/)?.[1];
+  if (provId && method === "DELETE") {
+    if (!db.proveedores.some((c) => c.id === provId)) throw new DemoError(404, "Proveedor no encontrado");
+    db.proveedores = db.proveedores.filter((c) => c.id !== provId);
+    db.productos.forEach((p) => {
+      if (p.proveedorId === provId) p.proveedorId = undefined;
+    });
+    saveDb(db);
+    return {};
+  }
+
   // --- Productos ---
   if (pathname === "/productos" && method === "GET") {
     const q = (query.get("q") ?? "").toLowerCase();
@@ -188,7 +309,9 @@ export async function demoRequest(method: string, path: string, body?: Body): Pr
       (p) => !q || p.nombre.toLowerCase().includes(q) || (p.sku ?? "").toLowerCase().includes(q)
     );
     if (query.get("bajoStock") === "true") productos = productos.filter((p) => p.stockActual <= p.stockMinimo);
-    return { productos: [...productos].sort((a, b) => a.nombre.localeCompare(b.nombre)) };
+    return {
+      productos: [...productos].sort((a, b) => a.nombre.localeCompare(b.nombre)).map((p) => conRelaciones(db, p)),
+    };
   }
   if (pathname === "/productos" && method === "POST") {
     const nombre = String(body?.nombre ?? "").trim();
@@ -201,10 +324,16 @@ export async function demoRequest(method: string, path: string, body?: Body): Pr
     if (sku && db.productos.some((p) => p.sku === sku)) {
       throw new DemoError(409, "Ya existe un registro con ese valor único (por ejemplo, el SKU)");
     }
+    const categoriaId = text(body?.categoriaId);
+    if (categoriaId && !db.categorias.some((c) => c.id === categoriaId)) throw new DemoError(400, "Categoría no válida");
+    const proveedorId = text(body?.proveedorId);
+    if (proveedorId && !db.proveedores.some((c) => c.id === proveedorId)) throw new DemoError(400, "Proveedor no válido");
     const producto: DemoProducto = {
       id: newId(),
       nombre,
       sku,
+      categoriaId,
+      proveedorId,
       precioCompra: money(compra),
       precioVenta: money(venta),
       stockActual: 0,
@@ -212,7 +341,7 @@ export async function demoRequest(method: string, path: string, body?: Body): Pr
     };
     db.productos.push(producto);
     saveDb(db);
-    return { producto };
+    return { producto: conRelaciones(db, producto) };
   }
 
   // --- Movimientos ---
@@ -250,19 +379,93 @@ export async function demoRequest(method: string, path: string, body?: Body): Pr
 
   // --- Ventas ---
   if (pathname === "/ventas" && method === "GET") {
-    return { ventas: [...db.ventas].sort((a, b) => b.createdAt.localeCompare(a.createdAt)) };
+    const ventas = [...db.ventas]
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .map((v) => ({
+        ...v,
+        items: v.items.map((it) => ({ ...it, producto: { nombre: db.productos.find((p) => p.id === it.productoId)?.nombre ?? "" } })),
+      }));
+    return { ventas };
   }
   if (pathname === "/ventas" && method === "POST") {
-    const total = Number(body?.total);
-    if (!(total > 0)) throw new DemoError(400, "Total inválido");
+    const cliente = text(body?.cliente);
+    const entrada = body?.items as { productoId: string; cantidad: number }[] | undefined;
+
+    // Venta rápida: total manual, sin descontar stock
+    if (!entrada) {
+      const total = Number(body?.total);
+      if (!(total > 0)) throw new DemoError(400, "Total inválido");
+      const venta: DemoVenta = { id: newId(), cliente, total: money(total), status: "COMPLETADA", createdAt: new Date().toISOString(), items: [] };
+      db.ventas.push(venta);
+      saveDb(db);
+      return { venta };
+    }
+
+    // Venta con productos: el total sale de los precios guardados, nunca del cliente.
+    // Se valida todo antes de tocar el stock (equivale a la transacción del backend).
+    if (!Array.isArray(entrada) || entrada.length === 0) throw new DemoError(400, "Indica el total o los productos vendidos");
+    const pedido = new Map<string, number>();
+    for (const it of entrada) {
+      if (!Number.isInteger(it.cantidad) || it.cantidad < 1) throw new DemoError(400, "Cantidad inválida");
+      pedido.set(it.productoId, (pedido.get(it.productoId) ?? 0) + it.cantidad);
+    }
+    const items: DemoVentaItem[] = [];
+    for (const [productoId, cantidad] of pedido) {
+      const producto = db.productos.find((p) => p.id === productoId);
+      if (!producto) throw new DemoError(404, "Producto no encontrado");
+      if (producto.stockActual < cantidad) {
+        throw new DemoError(400, `Stock insuficiente de "${producto.nombre}" (disponible: ${producto.stockActual})`);
+      }
+      items.push({ productoId, cantidad, precioUnit: producto.precioVenta, subtotal: money(Number(producto.precioVenta) * cantidad) });
+    }
+    const creadoEn = new Date().toISOString();
+    for (const it of items) {
+      const producto = db.productos.find((p) => p.id === it.productoId)!;
+      producto.stockActual -= it.cantidad;
+      db.movimientos.push({
+        id: newId(),
+        productoId: producto.id,
+        tipo: "SALIDA",
+        cantidad: it.cantidad,
+        motivo: "Venta",
+        createdAt: creadoEn,
+        producto: { nombre: producto.nombre },
+        creadoPor: { nombre: DEMO_USER.nombre },
+      });
+    }
     const venta: DemoVenta = {
       id: newId(),
-      cliente: body?.cliente ? String(body.cliente) : undefined,
-      total: money(total),
+      cliente,
+      total: money(items.reduce((s, it) => s + Number(it.subtotal), 0)),
       status: "COMPLETADA",
-      createdAt: new Date().toISOString(),
+      createdAt: creadoEn,
+      items,
     };
     db.ventas.push(venta);
+    saveDb(db);
+    return { venta };
+  }
+  const anularId = pathname.match(/^\/ventas\/([^/]+)\/anular$/)?.[1];
+  if (anularId && method === "POST") {
+    const venta = db.ventas.find((v) => v.id === anularId);
+    if (!venta) throw new DemoError(404, "Venta no encontrada");
+    if (venta.status === "ANULADA") throw new DemoError(409, "La venta ya está anulada");
+    for (const it of venta.items) {
+      const producto = db.productos.find((p) => p.id === it.productoId);
+      if (!producto) continue;
+      producto.stockActual += it.cantidad;
+      db.movimientos.push({
+        id: newId(),
+        productoId: producto.id,
+        tipo: "ENTRADA",
+        cantidad: it.cantidad,
+        motivo: "Anulación de venta",
+        createdAt: new Date().toISOString(),
+        producto: { nombre: producto.nombre },
+        creadoPor: { nombre: DEMO_USER.nombre },
+      });
+    }
+    venta.status = "ANULADA";
     saveDb(db);
     return { venta };
   }
@@ -281,6 +484,39 @@ export async function demoRequest(method: string, path: string, body?: Body): Pr
       totalVentas: ventas.reduce((s, v) => s + Number(v.total), 0),
       numeroMovimientos: db.movimientos.filter((m) => m.createdAt >= desde).length,
     };
+  }
+  if (pathname === "/reportes/top-productos" && method === "GET") {
+    const rango = query.get("rango") ?? "mes";
+    const desde = rangeStart(rango).toISOString();
+    const acumulado = new Map<string, { unidades: number; ingresos: number }>();
+    for (const v of db.ventas) {
+      if (v.status !== "COMPLETADA" || v.createdAt < desde) continue;
+      for (const it of v.items) {
+        const a = acumulado.get(it.productoId) ?? { unidades: 0, ingresos: 0 };
+        a.unidades += it.cantidad;
+        a.ingresos += Number(it.subtotal);
+        acumulado.set(it.productoId, a);
+      }
+    }
+    const productos = [...acumulado]
+      .map(([id, a]) => ({ id, nombre: db.productos.find((p) => p.id === id)?.nombre ?? "", ...a }))
+      .sort((a, b) => b.unidades - a.unidades)
+      .slice(0, 5);
+    return { rango, productos };
+  }
+
+  // --- Asistente de reposición (en la demo solo reglas: no hay clave de API en el navegador) ---
+  if (pathname === "/asistente/reposicion" && method === "GET") {
+    const desde = new Date(Date.now() - VENTANA_DIAS * 24 * 60 * 60 * 1000).toISOString();
+    const vendidas = new Map<string, number>();
+    for (const v of db.ventas) {
+      if (v.status !== "COMPLETADA" || v.createdAt < desde) continue;
+      for (const it of v.items) vendidas.set(it.productoId, (vendidas.get(it.productoId) ?? 0) + it.cantidad);
+    }
+    const sugerencias = calcularSugerencias(
+      db.productos.map((p) => ({ id: p.id, nombre: p.nombre, stock: p.stockActual, minimo: p.stockMinimo, vendidas: vendidas.get(p.id) ?? 0 }))
+    );
+    return { resumen: resumenPorReglas(sugerencias), fuente: "reglas", sugerencias };
   }
 
   throw new DemoError(404, `Ruta no encontrada: ${method} ${path}`);

@@ -15,11 +15,16 @@ interface Resumen {
   numeroMovimientos?: number;
 }
 
+interface TopProductos {
+  productos: { id: string; nombre: string; unidades: number; ingresos: number }[];
+}
+
 const dinero = (n?: number) => "$" + (n ?? 0).toFixed(2);
 
 export default function Reportes() {
   const [rango, setRango] = useState<Rango>("hoy");
   const { data, cargando, error } = useData<Resumen>(`/reportes/resumen?rango=${rango}`);
+  const { data: top } = useData<TopProductos>(`/reportes/top-productos?rango=${rango}`);
 
   return (
     <div>
@@ -80,6 +85,27 @@ export default function Reportes() {
         </Card>
       </div>
 
+      <h2 className="mt-6 mb-3 text-sm font-bold uppercase tracking-wide text-slate-500">Más vendidos ({rango})</h2>
+      <Card>
+        {!top || top.productos.length === 0 ? (
+          <p className="text-sm text-slate-500">Aún no hay ventas con productos en este periodo.</p>
+        ) : (
+          <ol className="space-y-2" data-testid="top-productos">
+            {top.productos.map((p, i) => (
+              <li key={p.id} className="flex items-center justify-between gap-3 text-sm">
+                <span className="min-w-0 truncate">
+                  <span className="mr-2 font-bold text-brand-700">{i + 1}.</span>
+                  {p.nombre}
+                </span>
+                <span className="text-right">
+                  <span className="font-semibold">{p.unidades} u.</span>
+                  <span className="ml-2 text-xs text-slate-500">{dinero(p.ingresos)}</span>
+                </span>
+              </li>
+            ))}
+          </ol>
+        )}
+      </Card>
     </div>
   );
 }

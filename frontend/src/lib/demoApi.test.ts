@@ -131,3 +131,102 @@ describe("demoApi: datos sembrados de hoy", () => {
     expect(ventas.every((v: Json) => new Date(v.createdAt).getTime() <= Date.now())).toBe(true);
   });
 });
+
+describe("demoApi: categorías y proveedores", () => {
+  it("lista con el conteo de productos y rechaza nombres vacíos o repetidos", async () => {
+    const { categorias } = await get("/categorias");
+    expect(categorias.find((c: Json) => c.nombre === "Granos")._count.productos).toBe(2);
+    await expect(post("/categorias", { nombre: " " })).rejects.toMatchObject({ status: 400 });
+    await expect(post("/categorias", { nombre: "granos" })).rejects.toMatchObject({ status: 409 });
+  });
+
+  it("borrar una categoría deja sus productos sin categoría", async () => {
+    const { categoria } = await post("/categorias", { nombre: "Snacks" });
+    const { producto } = await post("/productos", { nombre: "Papas", precioCompra: 1, precioVenta: 2, categoriaId: categoria.id });
+    expect(producto.categoria.nombre).toBe("Snacks");
+    await demoRequest("DELETE", `/categorias/${categoria.id}`);
+    const papas = (await get("/productos?q=papas")).productos[0];
+    expect(papas.categoriaId).toBeUndefined();
+    await expect(demoRequest("DELETE", "/categorias/no-existe")).rejects.toMatchObject({ status: 404 });
+  });
+
+  it("valida el correo del proveedor y que el producto use categoría/proveedor existentes", async () => {
+    await expect(post("/proveedores", { nombre: "X", email: "malo" })).rejects.toMatchObject({ status: 400 });
+    await expect(
+      post("/productos", { nombre: "Z", precioCompra: 1, precioVenta: 2, categoriaId: "de-otra-empresa" })
+    ).rejects.toMatchObject({ status: 400 });
+    await expect(
+      post("/productos", { nombre: "Z", precioCompra: 1, precioVenta: 2, proveedorId: "de-otra-empresa" })
+    ).rejects.toMatchObject({ status: 400 });
+  });
+});
+
+describe("demoApi: ventas con productos", () => {
+  const arroz = async () => (await get("/productos?q=arroz")).productos[0] as Json;
+
+  it("calcula el total con los precios guardados (ignora el del cliente), descuenta stock y registra la salida", async () => {
+    const antes = await arroz();
+    const { venta } = await post("/ventas", { items: [{ productoId: antes.id, cantidad: 2 }], total: 999 });
+    expect(venta.total).toBe(money(Number(antes.precioVenta) * 2));
+    expect((await arroz()).stockActual).toBe(antes.stockActual - 2);
+    const { movimientos } = await get("/movimientos");
+    expect(movimientos[0]).toMatchObject({ tipo: "SALIDA", cantidad: 2, motivo: "Venta" });
+  });
+
+  it("stock insuficiente: 400 y no descuenta nada, ni de los otros productos de la venta", async () => {
+    const leche = (await get("/productos?q=leche")).productos[0] as Json;
+    const antes = await arroz();
+    await expect(
+      post("/ventas", {
+        items: [
+          { productoId: antes.id, cantidad: 1 },
+          { productoId: leche.id, cantidad: leche.stockActual + 1 },
+        ],
+      })
+    ).rejects.toMatchObject({ status: 400 });
+    expect((await arroz()).stockActual).toBe(antes.stockActual);
+  });
+
+  it("anular repone el stock y no se puede anular dos veces (409)", async () => {
+    const antes = await arroz();
+    const { venta } = await post("/ventas", { items: [{ productoId: antes.id, cantidad: 3 }] });
+    await post(`/ventas/${venta.id}/anular`, {});
+    expect((await arroz()).stockActual).toBe(antes.stockActual);
+    await expect(post(`/ventas/${venta.id}/anular`, {})).rejects.toMatchObject({ status: 409 });
+    await expect(post("/ventas/no-existe/anular", {})).rejects.toMatchObject({ status: 404 });
+  });
+
+  it("una venta anulada deja de contar en los reportes", async () => {
+    const p = await arroz();
+    const antes = await get("/reportes/resumen?rango=hoy");
+    const { venta } = await post("/ventas", { items: [{ productoId: p.id, cantidad: 1 }] });
+    await post(`/ventas/${venta.id}/anular`, {});
+    const despues = await get("/reportes/resumen?rango=hoy");
+    expect(despues.numeroVentas).toBe(antes.numeroVentas);
+  });
+});
+
+describe("demoApi: top de productos y asistente de reposición", () => {
+  it("top-productos viene ordenado por unidades y limitado a 5", async () => {
+    const { productos } = await get("/reportes/top-productos?rango=mes");
+    expect(productos.length).toBeGreaterThan(0);
+    expect(productos.length).toBeLessThanOrEqual(5);
+    const unidades = productos.map((p: Json) => p.unidades);
+    expect(unidades).toEqual([...unidades].sort((a, b) => b - a));
+  });
+
+  it("sugiere reponer lo que está bajo el mínimo y deja de sugerirlo tras una entrada", async () => {
+    const antes = await get("/asistente/reposicion");
+    expect(antes.fuente).toBe("reglas");
+    const leche = antes.sugerencias.find((s: Json) => s.nombre === "Leche 1 L");
+    expect(leche.cantidadSugerida).toBeGreaterThan(0);
+
+    await post("/movimientos", { productoId: leche.productoId, tipo: "ENTRADA", cantidad: 200 });
+    const despues = await get("/asistente/reposicion");
+    expect(despues.sugerencias.find((s: Json) => s.nombre === "Leche 1 L")).toBeUndefined();
+  });
+});
+
+function money(n: number) {
+  return n.toFixed(2);
+}

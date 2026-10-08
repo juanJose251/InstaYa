@@ -1,4 +1,4 @@
-import { InputHTMLAttributes, forwardRef } from "react";
+import { InputHTMLAttributes, forwardRef, useId } from "react";
 
 interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   label?: string;
@@ -9,16 +9,19 @@ const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
   { label, error, className = "", id, ...rest },
   ref
 ) {
+  // Sin id, el <label> no queda asociado al input (accesibilidad y getByLabel en los E2E)
+  const autoId = useId();
+  const inputId = id ?? autoId;
   return (
     <div className="flex flex-col gap-1">
       {label && (
-        <label htmlFor={id} className="text-sm font-medium text-slate-700">
+        <label htmlFor={inputId} className="text-sm font-medium text-slate-700">
           {label}
         </label>
       )}
       <input
         ref={ref}
-        id={id}
+        id={inputId}
         className={`rounded-xl border bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder-slate-400 outline-none transition-colors focus:ring-2 ${
           error
             ? "border-red-400 focus:border-red-500 focus:ring-red-100"

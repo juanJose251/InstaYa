@@ -17,6 +17,13 @@ export interface Producto {
   stockActual: number;
   stockMinimo: number;
   categoriaId?: string;
+  categoria?: { nombre?: string } | null;
+  proveedor?: { nombre?: string } | null;
+}
+
+interface Opcion {
+  id: string;
+  nombre: string;
 }
 
 interface ProductosResponse {
@@ -25,6 +32,8 @@ interface ProductosResponse {
 
 export default function Productos() {
   const { data, cargando, error, recargar } = useData<ProductosResponse>("/productos");
+  const { data: cats } = useData<{ categorias: Opcion[] }>("/categorias");
+  const { data: provs } = useData<{ proveedores: Opcion[] }>("/proveedores");
   const [mostrandoForm, setMostrandoForm] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [msgError, setMsgError] = useState("");
@@ -34,6 +43,8 @@ export default function Productos() {
     precioCompra: "",
     precioVenta: "",
     stockMinimo: "0",
+    categoriaId: "",
+    proveedorId: "",
   });
 
   function set<K extends keyof typeof form>(key: K, value: string) {
@@ -51,9 +62,11 @@ export default function Productos() {
         precioCompra: Number(form.precioCompra),
         precioVenta: Number(form.precioVenta),
         stockMinimo: Number(form.stockMinimo),
+        categoriaId: form.categoriaId || undefined,
+        proveedorId: form.proveedorId || undefined,
       });
       setMostrandoForm(false);
-      setForm({ nombre: "", sku: "", precioCompra: "", precioVenta: "", stockMinimo: "0" });
+      setForm({ nombre: "", sku: "", precioCompra: "", precioVenta: "", stockMinimo: "0", categoriaId: "", proveedorId: "" });
       recargar();
     } catch (err) {
       setMsgError(err instanceof Error ? err.message : "Error al guardar");
@@ -91,6 +104,26 @@ export default function Productos() {
                 <Input label="Precio venta ($)" type="number" step="0.01" min="0" required value={form.precioVenta} onChange={(e) => set("precioVenta", e.target.value)} />
               </div>
               <Input label="Stock mínimo" type="number" min="0" value={form.stockMinimo} onChange={(e) => set("stockMinimo", e.target.value)} />
+              <div className="grid grid-cols-2 gap-3">
+                <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
+                  Categoría
+                  <select className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm" value={form.categoriaId} onChange={(e) => set("categoriaId", e.target.value)}>
+                    <option value="">Sin categoría</option>
+                    {cats?.categorias.map((c) => (
+                      <option key={c.id} value={c.id}>{c.nombre}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1 text-sm font-medium text-slate-700">
+                  Proveedor
+                  <select className="rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm" value={form.proveedorId} onChange={(e) => set("proveedorId", e.target.value)}>
+                    <option value="">Sin proveedor</option>
+                    {provs?.proveedores.map((c) => (
+                      <option key={c.id} value={c.id}>{c.nombre}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
               <Button type="submit" fullWidth disabled={guardando}>
                 {guardando ? "Guardando..." : "Guardar producto"}
               </Button>
@@ -128,6 +161,7 @@ export default function Productos() {
                   <p className="font-semibold text-slate-900 truncate">{p.nombre}</p>
                   <p className="text-xs text-slate-500">
                     {p.sku && `${p.sku} · `}${Number(p.precioVenta).toFixed(2)}
+                    {p.categoria?.nombre && ` · ${p.categoria.nombre}`}
                   </p>
                 </div>
                 <div className="text-right">
