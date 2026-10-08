@@ -1,5 +1,7 @@
-# PostgreSQL local para desarrollo: `docker compose up -d`
-# Coincide con DATABASE_URL de backend/.env.example.
+# Solo la base de datos (desarrollo con `npm run dev` en backend y frontend):
+#   docker compose up -d db
+# Toda la aplicación (PostgreSQL + API + web en http://localhost:8080):
+#   docker compose --profile full up --build
 services:
   db:
     image: postgres:16
@@ -11,6 +13,31 @@ services:
       - "5432:5432"
     volumes:
       - instaya-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d instaya"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    profiles: ["full"]
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/instaya?schema=public
+      JWT_SECRET: ${JWT_SECRET:-cambia-este-secreto-en-produccion}
+      CLIENT_URL: http://localhost:8080
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    profiles: ["full"]
+    build: ./frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
 
 volumes:
   instaya-db:

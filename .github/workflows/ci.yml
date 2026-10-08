@@ -7,6 +7,7 @@ on:
 
 jobs:
   backend:
+    name: Backend (unit + build)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -23,7 +24,44 @@ jobs:
       - run: npm test
       - run: npm run build
 
+  integration:
+    name: Backend (integración con PostgreSQL real)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: instaya_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/instaya_test?schema=public
+      JWT_SECRET: ci-secret
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - run: npx prisma migrate deploy
+      - run: npm run test:integration
+      # La semilla también se prueba: debe correr limpia y ser idempotente
+      - run: npm run seed && npm run seed
+
   frontend:
+    name: Frontend (tests + build)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -40,3 +78,36 @@ jobs:
       - run: npm run build
         env:
           VITE_DEMO: "true"
+
+  e2e:
+    name: E2E (Playwright sobre la demo)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: frontend/playwright-report
+          retention-days: 7
+
+  docker:
+    name: Docker (construir imágenes)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t instaya-backend ./backend
+      - run: docker build -t instaya-frontend ./frontend
+      - name: Validar docker-compose
+        run: docker compose --profile full config -q
