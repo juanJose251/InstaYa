@@ -152,6 +152,7 @@ model MovimientoStock {
   creadoPor Usuario @relation("movimientosCreados", fields: [creadoPorId], references: [id], onDelete: Restrict)
 
   @@index([empresaId, productoId])
+  @@index([empresaId, createdAt])
   @@map("movimientos_stock")
 }
 
@@ -172,6 +173,7 @@ model Venta {
   items     VentaItem[]
 
   @@index([empresaId])
+  @@index([empresaId, createdAt])
   @@map("ventas")
 }
 
@@ -187,5 +189,6 @@ model VentaItem {
   producto Producto @relation(fields: [productoId], references: [id], onDelete: Restrict)
 
   @@index([ventaId])
+  @@index([productoId])
   @@map("venta_items")
 }

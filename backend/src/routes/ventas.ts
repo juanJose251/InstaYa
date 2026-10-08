@@ -60,10 +60,15 @@ router.post(
         const subtotal = producto.precioVenta.mul(it.cantidad);
         total = total.add(subtotal);
         lineas.push({ productoId: producto.id, cantidad: it.cantidad, precioUnit: producto.precioVenta, subtotal });
-        await tx.producto.update({
-          where: { id: producto.id },
+        // Descuento atómico: la condición stockActual >= cantidad se evalúa en la misma sentencia SQL,
+        // así dos ventas simultáneas del último artículo no pueden dejar el stock en negativo.
+        const { count } = await tx.producto.updateMany({
+          where: { id: producto.id, empresaId, stockActual: { gte: it.cantidad } },
           data: { stockActual: { decrement: it.cantidad } },
         });
+        if (count === 0) {
+          throw new AppError(400, `Stock insuficiente de "${producto.nombre}"`);
+        }
         await tx.movimientoStock.create({
           data: { empresaId, productoId: producto.id, tipo: "SALIDA", cantidad: it.cantidad, motivo: "Venta", creadoPorId: userId },
         });

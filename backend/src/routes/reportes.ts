@@ -39,4 +39,28 @@ router.get(
   })
 );
 
+// GET /api/reportes/top-productos?rango= — los 5 más vendidos (agregación en SQL, no en memoria)
+router.get(
+  "/top-productos",
+  asyncHandler(async (req, res) => {
+    const { empresaId } = req.user!;
+    const rango = typeof req.query.rango === "string" ? req.query.rango : "mes";
+    const productos = await prisma.$queryRaw<{ id: string; nombre: string; unidades: number; ingresos: number }[]>`
+      SELECT p.id,
+             p.nombre,
+             SUM(vi.cantidad)::int AS unidades,
+             SUM(vi.subtotal)::float AS ingresos
+      FROM venta_items vi
+      JOIN ventas v ON v.id = vi."ventaId"
+      JOIN productos p ON p.id = vi."productoId"
+      WHERE v."empresaId" = ${empresaId}
+        AND v.status = 'COMPLETADA'
+        AND v."createdAt" >= ${desde(rango)}
+      GROUP BY p.id, p.nombre
+      ORDER BY unidades DESC
+      LIMIT 5`;
+    res.json({ rango, productos });
+  })
+);
+
 export default router;

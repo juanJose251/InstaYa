@@ -12,6 +12,8 @@ function model() {
     findMany: vi.fn(),
     create: vi.fn(),
     update: vi.fn(),
+    updateMany: vi.fn(),
+    delete: vi.fn(),
   };
 }
 
@@ -21,6 +23,9 @@ export const prismaMock = {
   producto: model(),
   movimientoStock: model(),
   venta: model(),
+  categoria: model(),
+  proveedor: model(),
+  $queryRaw: vi.fn(),
   $transaction: vi.fn(),
 };
 

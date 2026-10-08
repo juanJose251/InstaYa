@@ -46,14 +46,19 @@ router.post(
       });
       if (!producto) throw new AppError(404, "Producto no encontrado");
 
-      let nuevoStock: number;
-      if (data.tipo === "ENTRADA") nuevoStock = producto.stockActual + data.cantidad;
-      else if (data.tipo === "SALIDA") nuevoStock = producto.stockActual - data.cantidad;
-      else nuevoStock = data.cantidad;
-
-      if (nuevoStock < 0) throw new AppError(400, "Stock insuficiente para esta salida");
-
-      await tx.producto.update({ where: { id: producto.id }, data: { stockActual: nuevoStock } });
+      // ENTRADA/SALIDA se aplican como incremento/decremento en la propia sentencia SQL (no "leer, sumar, escribir"),
+      // para que dos movimientos simultáneos no se pisen. La SALIDA además exige stock suficiente en el WHERE.
+      if (data.tipo === "ENTRADA") {
+        await tx.producto.update({ where: { id: producto.id }, data: { stockActual: { increment: data.cantidad } } });
+      } else if (data.tipo === "SALIDA") {
+        const { count } = await tx.producto.updateMany({
+          where: { id: producto.id, empresaId, stockActual: { gte: data.cantidad } },
+          data: { stockActual: { decrement: data.cantidad } },
+        });
+        if (count === 0) throw new AppError(400, "Stock insuficiente para esta salida");
+      } else {
+        await tx.producto.update({ where: { id: producto.id }, data: { stockActual: data.cantidad } });
+      }
       return tx.movimientoStock.create({
         data: {
           empresaId,

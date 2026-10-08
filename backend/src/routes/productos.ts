@@ -20,6 +20,16 @@ const productoSchema = z.object({
   stockMinimo: z.number().int().nonnegative().default(0),
 });
 
+// La categoría y el proveedor deben ser de la misma empresa: si no, un id ajeno filtraría datos entre tenants.
+async function verificarRelaciones(empresaId: string, data: { categoriaId?: string; proveedorId?: string }) {
+  if (data.categoriaId && !(await prisma.categoria.findFirst({ where: { id: data.categoriaId, empresaId } }))) {
+    throw new AppError(400, "Categoría no válida");
+  }
+  if (data.proveedorId && !(await prisma.proveedor.findFirst({ where: { id: data.proveedorId, empresaId } }))) {
+    throw new AppError(400, "Proveedor no válido");
+  }
+}
+
 // GET /api/productos?q=&bajoStock=true
 router.get(
   "/",
@@ -39,6 +49,7 @@ router.get(
             }
           : {}),
       },
+      include: { categoria: { select: { nombre: true } }, proveedor: { select: { nombre: true } } },
       orderBy: { nombre: "asc" },
     });
     if (req.query.bajoStock === "true") {
@@ -64,6 +75,7 @@ router.post(
   requireRole(Role.ADMIN),
   asyncHandler(async (req, res) => {
     const data = productoSchema.parse(req.body);
+    await verificarRelaciones(req.user!.empresaId, data);
     const producto = await prisma.producto.create({
       data: { ...data, empresaId: req.user!.empresaId },
     });
@@ -79,6 +91,7 @@ router.put(
     const { empresaId } = req.user!;
     const existe = await prisma.producto.findFirst({ where: { id: req.params.id, empresaId } });
     if (!existe) throw new AppError(404, "Producto no encontrado");
+    await verificarRelaciones(empresaId, data);
     const producto = await prisma.producto.update({ where: { id: existe.id }, data });
     res.json({ producto });
   })
