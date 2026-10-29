@@ -3,6 +3,7 @@ import Card from "../components/ui/Card";
 import Alert from "../components/ui/Alert";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../hooks/useData";
+import { textoEstado } from "../lib/suscripcion";
 
 const accesoRapido = [
   { to: "/app/productos", label: "Productos", desc: "Catálogo y stock", emoji: "▤" },
@@ -27,9 +28,12 @@ interface Reposicion {
 }
 
 export default function Dashboard() {
-  const { usuario, empresa } = useAuth();
+  const { usuario, empresa, suscripcion } = useAuth();
   const { data: resumen, error } = useData<Resumen>("/reportes/resumen?rango=hoy");
   const { data: repo } = useData<Reposicion>("/asistente/reposicion");
+  const { data: bajos } = useData<{ productos: { id: string; nombre: string; stockActual: number; stockMinimo: number }[] }>(
+    "/productos?bajoStock=true"
+  );
 
   return (
     <div>
@@ -39,10 +43,10 @@ export default function Dashboard() {
         <p className="mt-1 text-sm text-brand-100">
           {empresa?.nombre} · {usuario?.rol === "ADMIN" ? "Administrador" : "Empleado"}
         </p>
-        {empresa?.trialFin && (
-          <p className="mt-2 inline-block rounded-full bg-white/15 px-3 py-1 text-xs">
-            Prueba gratuita hasta el {new Date(empresa.trialFin).toLocaleDateString("es-SV")}
-          </p>
+        {suscripcion && (
+          <Link to="/app/plan" className="mt-2 inline-block rounded-full bg-white/15 px-3 py-1 text-xs hover:bg-white/25">
+            {textoEstado(suscripcion)}
+          </Link>
         )}
       </div>
 
@@ -70,6 +74,28 @@ export default function Dashboard() {
           <p className="text-xs text-slate-500">Valor inventario</p>
         </Card>
       </div>
+
+      {bajos && bajos.productos.length > 0 && (
+        <Card className="mt-4 ring-red-200">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-bold uppercase tracking-wide text-red-700">⚠ Alertas de stock</h2>
+            <Link to="/app/productos" className="text-xs font-semibold text-brand-700">
+              Ver todo →
+            </Link>
+          </div>
+          <ul className="mt-2 space-y-1 text-sm" data-testid="alertas-stock">
+            {bajos.productos.slice(0, 5).map((p) => (
+              <li key={p.id} className="flex justify-between gap-3">
+                <span className="truncate">{p.nombre}</span>
+                <span className={`shrink-0 font-semibold ${p.stockActual === 0 ? "text-red-700" : "text-accent-700"}`}>
+                  {p.stockActual === 0 ? "agotado" : `${p.stockActual} u.`}
+                  <span className="ml-1 text-xs font-normal text-slate-500">(mín. {p.stockMinimo})</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
 
       {repo && (
         <Card className="mt-4" >

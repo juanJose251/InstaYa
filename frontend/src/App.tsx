@@ -1,8 +1,9 @@
-import { ReactNode } from "react";
+import { ReactNode, lazy, Suspense } from "react";
 import { Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "./context/AuthContext";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
+import Landing from "./pages/Landing";
 import AppLayout from "./components/layout/AppLayout";
 import Dashboard from "./pages/Dashboard";
 import Productos from "./pages/Productos";
@@ -11,6 +12,11 @@ import Ventas from "./pages/Ventas";
 import Reportes from "./pages/Reportes";
 import Configuracion from "./pages/Configuracion";
 import Catalogo from "./pages/Catalogo";
+import Equipo from "./pages/Equipo";
+import Plan from "./pages/Plan";
+
+// La importación se usa pocas veces (lector de Excel incluido): se carga aparte para no pesar en el arranque
+const Importar = lazy(() => import("./pages/Importar"));
 
 function Splash() {
   return (
@@ -37,6 +43,7 @@ function Protected({ children }: { children: ReactNode }) {
 export default function App() {
   return (
     <Routes>
+      <Route path="/" element={<Landing />} />
       <Route path="/login" element={<Login />} />
       <Route path="/registro" element={<Register />} />
       <Route
@@ -49,13 +56,23 @@ export default function App() {
       >
         <Route index element={<Dashboard />} />
         <Route path="productos" element={<Productos />} />
+        <Route
+          path="importar"
+          element={
+            <Suspense fallback={<p className="py-8 text-center text-sm text-slate-500">Cargando...</p>}>
+              <Importar />
+            </Suspense>
+          }
+        />
         <Route path="movimientos" element={<Movimientos />} />
         <Route path="ventas" element={<Ventas />} />
         <Route path="catalogo" element={<Catalogo />} />
         <Route path="reportes" element={<Reportes />} />
+        <Route path="equipo" element={<Equipo />} />
+        <Route path="plan" element={<Plan />} />
         <Route path="config" element={<Configuracion />} />
       </Route>
-      <Route path="*" element={<Navigate to="/app" replace />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }

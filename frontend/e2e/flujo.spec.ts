@@ -70,7 +70,7 @@ test("catálogo: crear categoría y usarla en un producto nuevo", async ({ page 
   await page.getByLabel("Precio venta ($)").fill("1");
   await page.getByLabel("Categoría").selectOption({ label: "Snacks" });
   await page.getByRole("button", { name: "Guardar producto" }).click();
-  await expect(page.getByText("Papas fritas")).toBeVisible();
+  await expect(page.getByText("Papas fritas", { exact: true })).toBeVisible();
   await expect(page.getByText(/· Snacks/)).toBeVisible();
 });
 

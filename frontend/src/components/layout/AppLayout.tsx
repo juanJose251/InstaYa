@@ -1,4 +1,5 @@
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
+import { textoEstado } from "../../lib/suscripcion";
 import { useAuth } from "../../context/AuthContext";
 import { ReactNode } from "react";
 
@@ -18,7 +19,10 @@ const navItems: NavItem[] = [
 ];
 
 export default function AppLayout() {
-  const { usuario, empresa, logout } = useAuth();
+  const { usuario, empresa, suscripcion, logout } = useAuth();
+  const avisoPlan =
+    suscripcion &&
+    (suscripcion.soloLectura || (suscripcion.estado === "PRUEBA" && suscripcion.diasRestantes !== null && suscripcion.diasRestantes <= 5));
   const navigate = useNavigate();
 
   function handleLogout() {
@@ -50,6 +54,21 @@ export default function AppLayout() {
           </div>
         </div>
       </header>
+
+      {avisoPlan && (
+        <Link
+          to="/app/plan"
+          data-testid="aviso-plan"
+          className={`block text-center text-xs font-semibold ${
+            suscripcion?.soloLectura ? "bg-red-600 text-white" : "bg-accent-100 text-accent-900"
+          }`}
+        >
+          <span className="mx-auto block max-w-2xl px-4 py-2">
+            {textoEstado(suscripcion)}
+            {suscripcion?.soloLectura ? " · Modo solo lectura. Renueva aquí →" : " · Activa tu plan por $10/mes →"}
+          </span>
+        </Link>
+      )}
 
       <main className="mx-auto max-w-2xl px-4 pb-24 pt-5">
         <Outlet />

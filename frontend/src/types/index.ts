@@ -5,18 +5,39 @@ export interface Usuario {
   nombre: string;
   email: string;
   rol: Role;
+  empresaId?: string;
 }
 
 export interface Empresa {
   id: string;
   nombre: string;
-  trialFin?: string;
+  giro?: string | null;
+  direccion?: string | null;
+  telefono?: string | null;
+  trialFin?: string | null;
+  plan?: "PRUEBA" | "BASICO";
+  suscripcionFin?: string | null;
+}
+
+export interface Suscripcion {
+  plan: "PRUEBA" | "BASICO";
+  estado: "PRUEBA" | "ACTIVA" | "VENCIDA";
+  venceEl: string | null;
+  diasRestantes: number | null;
+  soloLectura: boolean;
 }
 
 export interface AuthResponse {
   token: string;
   usuario: Usuario;
   empresa: Empresa;
+  suscripcion?: Suscripcion;
+}
+
+export interface MeResponse {
+  usuario: Usuario;
+  empresa: Empresa | null;
+  suscripcion?: Suscripcion;
 }
 
 export interface LoginInput {

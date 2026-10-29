@@ -19,9 +19,12 @@ export function clearToken(): void {
 
 export class ApiError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  /** Cuerpo completo del error (p. ej. `errores` por fila en la importación) */
+  data?: Record<string, unknown>;
+  constructor(status: number, message: string, data?: Record<string, unknown>) {
     super(message);
     this.status = status;
+    this.data = data;
   }
 }
 
@@ -32,7 +35,8 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
       return (await demoRequest(options.method ?? "GET", path, body)) as T;
     } catch (err) {
       const status = (err as { status?: number }).status ?? 500;
-      throw new ApiError(status, err instanceof Error ? err.message : "Error");
+      const data = (err as { data?: Record<string, unknown> }).data;
+      throw new ApiError(status, err instanceof Error ? err.message : "Error", data);
     }
   }
 
@@ -53,13 +57,14 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
   if (!res.ok) {
     let message = `Error ${res.status}`;
+    let data: Record<string, unknown> | undefined;
     try {
-      const body = await res.json();
-      message = body.message ?? body.error ?? message;
+      data = await res.json();
+      message = (data?.message as string) ?? (data?.error as string) ?? message;
     } catch {
       // body no era JSON
     }
-    throw new ApiError(res.status, message);
+    throw new ApiError(res.status, message, data);
   }
 
   // DELETE devuelve 204 sin cuerpo

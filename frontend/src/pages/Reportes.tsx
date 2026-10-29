@@ -3,6 +3,9 @@ import PageHeader from "../components/ui/PageHeader";
 import Card from "../components/ui/Card";
 import Alert from "../components/ui/Alert";
 import { useData } from "../hooks/useData";
+import { api } from "../lib/api";
+import { crearXlsx } from "../lib/xlsx";
+import { descargar, fechaArchivo } from "../lib/hoja";
 
 type Rango = "hoy" | "semana" | "mes";
 
@@ -21,14 +24,76 @@ interface TopProductos {
 
 const dinero = (n?: number) => "$" + (n ?? 0).toFixed(2);
 
+interface VentaExport {
+  createdAt: string;
+  cliente?: string | null;
+  total: string;
+  status: string;
+  items?: { cantidad: number; producto?: { nombre?: string } }[];
+}
+
+function inicioRango(rango: Rango): Date {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  if (rango === "semana") d.setDate(d.getDate() - 6);
+  else if (rango === "mes") d.setDate(d.getDate() - 29);
+  return d;
+}
+
 export default function Reportes() {
   const [rango, setRango] = useState<Rango>("hoy");
   const { data, cargando, error } = useData<Resumen>(`/reportes/resumen?rango=${rango}`);
   const { data: top } = useData<TopProductos>(`/reportes/top-productos?rango=${rango}`);
+  const [exportando, setExportando] = useState(false);
+
+  async function exportarVentas() {
+    setExportando(true);
+    try {
+      const { ventas } = await api.get<{ ventas: VentaExport[] }>("/ventas");
+      const desde = inicioRango(rango).getTime();
+      const filas = ventas
+        .filter((v) => new Date(v.createdAt).getTime() >= desde)
+        .map((v) => [
+          new Date(v.createdAt).toLocaleString("es-SV"),
+          v.cliente ?? "",
+          v.status === "ANULADA" ? "Anulada" : "Completada",
+          (v.items ?? []).map((it) => `${it.cantidad} × ${it.producto?.nombre ?? ""}`).join(", ") || "Venta rápida",
+          Number(v.total),
+        ]);
+      const completadas = filas.filter((f) => f[2] === "Completada");
+      descargar(
+        crearXlsx(
+          [
+            ["Fecha", "Cliente", "Estado", "Productos", "Total ($)"],
+            ...filas,
+            [],
+            ["", "", "", "Total vendido (sin anuladas)", completadas.reduce((s, f) => s + Number(f[4]), 0)],
+          ],
+          "Ventas"
+        ),
+        `ventas-${rango}-${fechaArchivo()}.xlsx`
+      );
+    } finally {
+      setExportando(false);
+    }
+  }
 
   return (
     <div>
-      <PageHeader title="Reportes" subtitle="Inventario, ventas y valoración" />
+      <PageHeader
+        title="Reportes"
+        subtitle="Inventario, ventas y valoración"
+        action={
+          <button
+            type="button"
+            onClick={exportarVentas}
+            disabled={exportando}
+            className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          >
+            {exportando ? "..." : "⇩ Excel"}
+          </button>
+        }
+      />
 
       <div className="mb-4 grid grid-cols-3 gap-2">
         {(["hoy", "semana", "mes"] as const).map((r) => (

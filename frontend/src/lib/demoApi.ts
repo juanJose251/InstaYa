@@ -6,6 +6,7 @@
  * en localStorage. Así la demo funciona sin servidor ni base de datos.
  */
 import { calcularSugerencias, resumenPorReglas, VENTANA_DIAS } from "./reposicion";
+import { calcularSuscripcion, extenderSuscripcion, PRECIOS } from "./suscripcion";
 
 interface DemoCategoria {
   id: string;
@@ -31,6 +32,7 @@ interface DemoProducto {
   precioVenta: string;
   stockActual: number;
   stockMinimo: number;
+  activo?: boolean; // baja lógica, como en el backend (undefined = activo)
 }
 
 interface DemoMovimiento {
@@ -60,7 +62,30 @@ interface DemoVenta {
   items: DemoVentaItem[];
 }
 
+interface DemoUsuario {
+  id: string;
+  nombre: string;
+  email: string;
+  rol: "ADMIN" | "EMPLEADO";
+  activo: boolean;
+  password: string; // solo en la demo (navegador); el backend real guarda un hash bcrypt
+  createdAt: string;
+}
+
+interface DemoEmpresa {
+  id: string;
+  nombre: string;
+  giro?: string;
+  direccion?: string;
+  telefono?: string;
+  plan: "PRUEBA" | "BASICO";
+  trialFin: string;
+  suscripcionFin?: string | null;
+}
+
 interface DemoDb {
+  empresa: DemoEmpresa;
+  usuarios: DemoUsuario[];
   categorias: DemoCategoria[];
   proveedores: DemoProveedor[];
   productos: DemoProducto[];
@@ -74,13 +99,35 @@ export const DEMO_PASSWORD = "demo1234";
 // v2: la forma de los datos cambió (categorías, proveedores, ventas con items)
 const DB_KEY = "instaya_demo_db_v2";
 const DEMO_USER = { id: "demo-user", nombre: "Dueña Demo", email: DEMO_EMAIL, rol: "ADMIN" as const };
-const DEMO_EMPRESA = { id: "demo-empresa", nombre: "Abarrotería La Esperanza (demo)" };
+const TOKEN_KEY = "instaya_token"; // mismo que api.ts
+
+function empresaInicial(): DemoEmpresa {
+  return {
+    id: "demo-empresa",
+    nombre: "Abarrotería La Esperanza (demo)",
+    giro: "Abarrotes",
+    telefono: "2222-0000",
+    plan: "PRUEBA",
+    trialFin: new Date(Date.now() + 12 * 24 * 60 * 60 * 1000).toISOString(), // prueba de 15 días ya empezada
+    suscripcionFin: null,
+  };
+}
+
+function usuariosIniciales(): DemoUsuario[] {
+  const creado = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+  return [
+    { ...DEMO_USER, activo: true, password: DEMO_PASSWORD, createdAt: creado },
+    { id: "demo-user-2", nombre: "Carlos (cajero)", email: "cajero@instaya.app", rol: "EMPLEADO", activo: true, password: "cajero123", createdAt: creado },
+  ];
+}
 
 export class DemoError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  data?: Record<string, unknown>;
+  constructor(status: number, message: string, data?: Record<string, unknown>) {
     super(message);
     this.status = status;
+    this.data = data;
   }
 }
 
@@ -175,13 +222,19 @@ export function buildDemoDb(): DemoDb {
     creadoPor: { nombre: DEMO_USER.nombre },
   }));
 
-  return { categorias, proveedores, productos, movimientos, ventas };
+  return { empresa: empresaInicial(), usuarios: usuariosIniciales(), categorias, proveedores, productos, movimientos, ventas };
 }
 
 function loadDb(): DemoDb {
   try {
     const raw = localStorage.getItem(DB_KEY);
-    if (raw) return JSON.parse(raw) as DemoDb;
+    if (raw) {
+      const db = JSON.parse(raw) as DemoDb;
+      // datos guardados por una versión anterior de la demo: se completan sin perder lo que ya había
+      db.empresa ??= empresaInicial();
+      db.usuarios ??= usuariosIniciales();
+      return db;
+    }
   } catch {
     // datos corruptos o localStorage bloqueado: se vuelve a sembrar
   }
@@ -223,6 +276,32 @@ function conRelaciones(db: DemoDb, p: DemoProducto) {
   };
 }
 
+const activos = (db: DemoDb) => db.productos.filter((p) => p.activo !== false);
+
+function usuarioActual(db: DemoDb): DemoUsuario | undefined {
+  let token: string | null = null;
+  try {
+    token = localStorage.getItem(TOKEN_KEY);
+  } catch {
+    // sin localStorage
+  }
+  const id = token?.startsWith("demo-token:") ? token.slice("demo-token:".length) : token === "demo-token" ? DEMO_USER.id : undefined;
+  return db.usuarios.find((u) => u.id === id && u.activo);
+}
+
+const publico = (u: DemoUsuario) => ({ id: u.id, nombre: u.nombre, email: u.email, rol: u.rol, activo: u.activo, createdAt: u.createdAt });
+const sesion = (u: DemoUsuario) => ({ id: u.id, nombre: u.nombre, email: u.email, rol: u.rol, empresaId: "demo-empresa" });
+
+/** Rutas que solo puede usar un ADMIN (las mismas que en el backend) */
+function soloAdmin(method: string, pathname: string): boolean {
+  if (method === "GET") return false;
+  return (
+    /^\/(productos|categorias|proveedores)(\/|$)/.test(pathname) ||
+    pathname.startsWith("/usuarios") ||
+    pathname === "/empresa"
+  );
+}
+
 /** Equivalente a `request()` de api.ts, pero contra la "BD" local. */
 export async function demoRequest(method: string, path: string, body?: Body): Promise<unknown> {
   const [pathname, queryString = ""] = path.split("?");
@@ -231,16 +310,116 @@ export async function demoRequest(method: string, path: string, body?: Body): Pr
 
   // --- Auth ---
   if (method === "POST" && pathname === "/auth/login") {
-    if (body?.email !== DEMO_EMAIL || body?.password !== DEMO_PASSWORD) {
-      throw new DemoError(401, `Demo: usa ${DEMO_EMAIL} / ${DEMO_PASSWORD}`);
-    }
-    return { token: "demo-token", usuario: DEMO_USER, empresa: DEMO_EMPRESA };
+    const email = String(body?.email ?? "").trim().toLowerCase();
+    const u = db.usuarios.find((x) => x.email === email && x.password === body?.password);
+    if (!u) throw new DemoError(401, `Demo: usa ${DEMO_EMAIL} / ${DEMO_PASSWORD}`);
+    if (!u.activo) throw new DemoError(403, "Usuario desactivado");
+    return {
+      token: u.id === DEMO_USER.id ? "demo-token" : `demo-token:${u.id}`,
+      usuario: sesion(u),
+      empresa: db.empresa,
+      suscripcion: calcularSuscripcion(db.empresa),
+    };
   }
   if (method === "POST" && pathname === "/auth/register") {
     throw new DemoError(403, "El registro está desactivado en la demo. Entra con la cuenta demo.");
   }
+
+  // A partir de aquí todo exige sesión, como `authenticate` en el backend
+  const yo = usuarioActual(db);
+  if (!yo) throw new DemoError(401, "Token inválido o expirado");
+  const suscripcion = calcularSuscripcion(db.empresa);
+  if (soloAdmin(method, pathname) && yo.rol !== "ADMIN") throw new DemoError(403, "No tienes permisos para esta acción");
+  if (suscripcion.soloLectura && method !== "GET" && !pathname.startsWith("/suscripcion")) {
+    throw new DemoError(402, "Tu periodo de prueba o tu mes pagado terminó. Renueva el plan para seguir registrando (tus datos siguen disponibles).");
+  }
+
   if (method === "GET" && pathname === "/usuarios/me") {
-    return { usuario: DEMO_USER };
+    return { usuario: sesion(yo), empresa: db.empresa, suscripcion };
+  }
+
+  // --- Equipo ---
+  if (pathname === "/usuarios" && method === "GET") {
+    return { usuarios: [...db.usuarios].sort((a, b) => a.createdAt.localeCompare(b.createdAt)).map(publico) };
+  }
+  if (pathname === "/usuarios" && method === "POST") {
+    const nombre = text(body?.nombre);
+    const email = text(body?.email)?.toLowerCase();
+    const password = String(body?.password ?? "");
+    if (!nombre || nombre.length < 2) throw new DemoError(400, "Nombre requerido");
+    if (!email || !/^\S+@\S+\.\S+$/.test(email)) throw new DemoError(400, "Email inválido");
+    if (password.length < 6) throw new DemoError(400, "Mínimo 6 caracteres");
+    if (db.usuarios.some((u) => u.email === email)) throw new DemoError(409, "Ese correo ya pertenece a un usuario de la empresa");
+    const rol = body?.rol === "ADMIN" ? "ADMIN" : "EMPLEADO";
+    const nuevo: DemoUsuario = { id: newId(), nombre, email, rol, activo: true, password, createdAt: new Date().toISOString() };
+    db.usuarios.push(nuevo);
+    saveDb(db);
+    return { usuario: publico(nuevo) };
+  }
+  const usuarioId = pathname.match(/^\/usuarios\/([^/]+)$/)?.[1];
+  if (usuarioId && method === "PUT") {
+    const u = db.usuarios.find((x) => x.id === usuarioId);
+    if (!u) throw new DemoError(404, "Usuario no encontrado");
+    if (u.id === yo.id && (body?.activo === false || body?.rol === "EMPLEADO")) {
+      throw new DemoError(400, "No puedes desactivarte ni quitarte el rol de administrador a ti mismo");
+    }
+    if (body?.nombre !== undefined) {
+      const nombre = text(body.nombre);
+      if (!nombre || nombre.length < 2) throw new DemoError(400, "Nombre requerido");
+      u.nombre = nombre;
+    }
+    const rol = body?.rol;
+    if (rol === "ADMIN" || rol === "EMPLEADO") u.rol = rol;
+    if (typeof body?.activo === "boolean") u.activo = body.activo;
+    if (body?.password !== undefined) {
+      if (String(body.password).length < 6) throw new DemoError(400, "Mínimo 6 caracteres");
+      u.password = String(body.password);
+    }
+    saveDb(db);
+    return { usuario: publico(u) };
+  }
+
+  // --- Empresa y plan ---
+  if (pathname === "/empresa" && method === "GET") return { empresa: db.empresa };
+  if (pathname === "/empresa" && method === "PUT") {
+    if (body?.nombre !== undefined) {
+      const nombre = text(body.nombre);
+      if (!nombre || nombre.length < 2) throw new DemoError(400, "Nombre de empresa requerido");
+      db.empresa.nombre = nombre;
+    }
+    for (const campo of ["giro", "direccion", "telefono"] as const) {
+      if (body?.[campo] !== undefined) db.empresa[campo] = text(body[campo]);
+    }
+    saveDb(db);
+    return { empresa: db.empresa };
+  }
+  if (pathname === "/suscripcion" && method === "GET") {
+    return {
+      suscripcion,
+      precios: PRECIOS,
+      pago: {
+        metodos: ["Transferencia bancaria", "Wompi", "N1co"],
+        contacto: "soporte@instaya.app",
+        instrucciones:
+          "Paga la implementación ($50, una sola vez) y la mensualidad ($10) y envía el comprobante con el nombre de tu empresa. Activamos tu plan el mismo día.",
+      },
+    };
+  }
+  // Solo existen en la demo: permiten mostrar el ciclo completo del plan sin pagar de verdad
+  if (pathname === "/suscripcion/demo/pagar" && method === "POST") {
+    const meses = Math.min(Math.max(Number(body?.meses ?? 1) || 1, 1), 24);
+    const vigente = db.empresa.plan === "BASICO" ? db.empresa.suscripcionFin : null;
+    db.empresa.plan = "BASICO";
+    db.empresa.suscripcionFin = extenderSuscripcion(vigente, meses).toISOString();
+    saveDb(db);
+    return { suscripcion: calcularSuscripcion(db.empresa) };
+  }
+  if (pathname === "/suscripcion/demo/vencer" && method === "POST") {
+    const ayer = new Date(Date.now() - 60_000).toISOString();
+    if (db.empresa.plan === "BASICO") db.empresa.suscripcionFin = ayer;
+    else db.empresa.trialFin = ayer;
+    saveDb(db);
+    return { suscripcion: calcularSuscripcion(db.empresa) };
   }
 
   // --- Categorías y proveedores ---
@@ -306,7 +485,7 @@ export async function demoRequest(method: string, path: string, body?: Body): Pr
   if (pathname === "/productos" && method === "GET") {
     const q = (query.get("q") ?? "").toLowerCase();
     let productos = db.productos.filter(
-      (p) => !q || p.nombre.toLowerCase().includes(q) || (p.sku ?? "").toLowerCase().includes(q)
+      (p) => p.activo !== false && (!q || p.nombre.toLowerCase().includes(q) || (p.sku ?? "").toLowerCase().includes(q))
     );
     if (query.get("bajoStock") === "true") productos = productos.filter((p) => p.stockActual <= p.stockMinimo);
     return {
@@ -344,6 +523,129 @@ export async function demoRequest(method: string, path: string, body?: Body): Pr
     return { producto: conRelaciones(db, producto) };
   }
 
+  const productoId = pathname.match(/^\/productos\/([^/]+)$/)?.[1];
+  if (productoId && productoId !== "importar") {
+    const producto = activos(db).find((p) => p.id === productoId);
+    if (!producto) throw new DemoError(404, "Producto no encontrado");
+    if (method === "GET") return { producto: conRelaciones(db, producto) };
+    if (method === "DELETE") {
+      producto.activo = false; // baja lógica: conserva ventas y movimientos
+      saveDb(db);
+      return undefined;
+    }
+    if (method === "PUT") {
+      if (body?.nombre !== undefined) {
+        const nombre = text(body.nombre);
+        if (!nombre) throw new DemoError(400, "Nombre requerido");
+        producto.nombre = nombre;
+      }
+      if (body?.sku !== undefined) {
+        const sku = text(body.sku);
+        if (sku && db.productos.some((p) => p.id !== producto.id && p.sku === sku)) {
+          throw new DemoError(409, "Ya existe un registro con ese valor único (por ejemplo, el SKU)");
+        }
+        producto.sku = sku;
+      }
+      for (const campo of ["precioCompra", "precioVenta"] as const) {
+        if (body?.[campo] === undefined) continue;
+        const n = Number(body[campo]);
+        if (!(n >= 0)) throw new DemoError(400, campo === "precioCompra" ? "Precio de compra inválido" : "Precio de venta inválido");
+        producto[campo] = money(n);
+      }
+      if (body?.stockMinimo !== undefined) {
+        const n = Number(body.stockMinimo);
+        if (!Number.isInteger(n) || n < 0) throw new DemoError(400, "Stock mínimo inválido");
+        producto.stockMinimo = n;
+      }
+      if (body?.categoriaId !== undefined) {
+        const id = text(body.categoriaId);
+        if (id && !db.categorias.some((c) => c.id === id)) throw new DemoError(400, "Categoría no válida");
+        producto.categoriaId = id;
+      }
+      if (body?.proveedorId !== undefined) {
+        const id = text(body.proveedorId);
+        if (id && !db.proveedores.some((c) => c.id === id)) throw new DemoError(400, "Proveedor no válido");
+        producto.proveedorId = id;
+      }
+      saveDb(db);
+      return { producto: conRelaciones(db, producto) };
+    }
+  }
+
+  // Importación masiva: mismas reglas que POST /api/productos/importar (todo o nada, actualiza por SKU o nombre)
+  if (pathname === "/productos/importar" && method === "POST") {
+    const filas = body?.productos as Record<string, unknown>[] | undefined;
+    if (!Array.isArray(filas) || filas.length === 0) throw new DemoError(400, "El archivo no tiene productos");
+    if (filas.length > 1000) throw new DemoError(400, "Máximo 1000 productos por importación");
+    const errores: { fila: number; error: string }[] = [];
+    const skus = new Set<string>();
+    filas.forEach((f, i) => {
+      const fila = i + 2;
+      const sku = text(f.sku)?.toLowerCase();
+      if (!text(f.nombre)) errores.push({ fila, error: "Nombre requerido" });
+      else if (!(typeof f.precioCompra === "number" && f.precioCompra >= 0)) errores.push({ fila, error: "Precio de compra inválido" });
+      else if (!(typeof f.precioVenta === "number" && f.precioVenta >= 0)) errores.push({ fila, error: "Precio de venta inválido" });
+      else if (f.stock !== undefined && !(Number.isInteger(f.stock) && (f.stock as number) >= 0)) errores.push({ fila, error: "Stock inválido" });
+      else if (sku && skus.has(sku)) errores.push({ fila, error: `SKU repetido en el archivo: ${String(f.sku)}` });
+      if (sku) skus.add(sku);
+    });
+    if (errores.length) {
+      throw new DemoError(400, `${errores.length} fila(s) con errores. No se importó nada.`, { errores: errores.slice(0, 50) });
+    }
+
+    const clave = (x: string) => x.trim().toLowerCase();
+    const resolver = (lista: { id: string; nombre: string }[], nombre?: string) => {
+      if (!nombre) return { id: undefined, nuevo: false };
+      const existe = lista.find((x) => clave(x.nombre) === clave(nombre));
+      if (existe) return { id: existe.id, nuevo: false };
+      const nuevo = { id: newId(), nombre };
+      lista.push(nuevo);
+      return { id: nuevo.id, nuevo: true };
+    };
+    let creados = 0;
+    let actualizados = 0;
+    let categoriasCreadas = 0;
+    let proveedoresCreados = 0;
+    const ahora = new Date().toISOString();
+    for (const f of filas) {
+      const cat = resolver(db.categorias, text(f.categoria));
+      const prov = resolver(db.proveedores, text(f.proveedor));
+      if (cat.nuevo) categoriasCreadas++;
+      if (prov.nuevo) proveedoresCreados++;
+      const nombre = text(f.nombre)!;
+      const sku = text(f.sku);
+      const stock = f.stock as number | undefined;
+      const existente = sku
+        ? db.productos.find((p) => p.sku && clave(p.sku) === clave(sku))
+        : db.productos.find((p) => clave(p.nombre) === clave(nombre));
+      const datos = {
+        nombre,
+        precioCompra: money(f.precioCompra as number),
+        precioVenta: money(f.precioVenta as number),
+        categoriaId: cat.id,
+        proveedorId: prov.id,
+        ...(f.stockMinimo !== undefined ? { stockMinimo: Number(f.stockMinimo) } : {}),
+      };
+      const movimiento = (productoId: string, tipo: DemoMovimiento["tipo"], cantidad: number, motivo: string) =>
+        db.movimientos.push({ id: newId(), productoId, tipo, cantidad, motivo, createdAt: ahora, producto: { nombre }, creadoPor: { nombre: yo.nombre } });
+      if (existente) {
+        Object.assign(existente, datos, { activo: true });
+        if (stock !== undefined && stock !== existente.stockActual) {
+          existente.stockActual = stock;
+          movimiento(existente.id, "AJUSTE", stock, "Importación de inventario");
+        }
+        actualizados++;
+      } else {
+        const nuevo: DemoProducto = { id: newId(), sku, stockMinimo: 0, ...datos, stockActual: stock ?? 0 };
+        db.productos.push(nuevo);
+        if (stock && stock > 0) movimiento(nuevo.id, "ENTRADA", stock, "Carga inicial (importación)");
+        creados++;
+      }
+    }
+    saveDb(db);
+    return { creados, actualizados, categoriasCreadas, proveedoresCreados };
+  }
+
   // --- Movimientos ---
   if (pathname === "/movimientos" && method === "GET") {
     return { movimientos: [...db.movimientos].sort((a, b) => b.createdAt.localeCompare(a.createdAt)) };
@@ -354,7 +656,7 @@ export async function demoRequest(method: string, path: string, body?: Body): Pr
     if (!["ENTRADA", "SALIDA", "AJUSTE"].includes(tipo)) throw new DemoError(400, "Tipo inválido");
     if (!Number.isInteger(cantidad) || cantidad < 0) throw new DemoError(400, "Cantidad inválida");
     if (tipo !== "AJUSTE" && cantidad < 1) throw new DemoError(400, "La cantidad debe ser mayor a 0");
-    const producto = db.productos.find((p) => p.id === body?.productoId);
+    const producto = activos(db).find((p) => p.id === body?.productoId);
     if (!producto) throw new DemoError(404, "Producto no encontrado");
 
     const nuevoStock =
@@ -370,7 +672,7 @@ export async function demoRequest(method: string, path: string, body?: Body): Pr
       motivo: body?.motivo ? String(body.motivo) : undefined,
       createdAt: new Date().toISOString(),
       producto: { nombre: producto.nombre },
-      creadoPor: { nombre: DEMO_USER.nombre },
+      creadoPor: { nombre: yo.nombre },
     };
     db.movimientos.push(movimiento);
     saveDb(db);
@@ -411,7 +713,7 @@ export async function demoRequest(method: string, path: string, body?: Body): Pr
     }
     const items: DemoVentaItem[] = [];
     for (const [productoId, cantidad] of pedido) {
-      const producto = db.productos.find((p) => p.id === productoId);
+      const producto = activos(db).find((p) => p.id === productoId);
       if (!producto) throw new DemoError(404, "Producto no encontrado");
       if (producto.stockActual < cantidad) {
         throw new DemoError(400, `Stock insuficiente de "${producto.nombre}" (disponible: ${producto.stockActual})`);
@@ -430,7 +732,7 @@ export async function demoRequest(method: string, path: string, body?: Body): Pr
         motivo: "Venta",
         createdAt: creadoEn,
         producto: { nombre: producto.nombre },
-        creadoPor: { nombre: DEMO_USER.nombre },
+        creadoPor: { nombre: yo.nombre },
       });
     }
     const venta: DemoVenta = {
@@ -462,7 +764,7 @@ export async function demoRequest(method: string, path: string, body?: Body): Pr
         motivo: "Anulación de venta",
         createdAt: new Date().toISOString(),
         producto: { nombre: producto.nombre },
-        creadoPor: { nombre: DEMO_USER.nombre },
+        creadoPor: { nombre: yo.nombre },
       });
     }
     venta.status = "ANULADA";
@@ -477,9 +779,9 @@ export async function demoRequest(method: string, path: string, body?: Body): Pr
     const ventas = db.ventas.filter((v) => v.status === "COMPLETADA" && v.createdAt >= desde);
     return {
       rango,
-      totalProductos: db.productos.length,
-      stockBajo: db.productos.filter((p) => p.stockActual <= p.stockMinimo).length,
-      valorInventario: db.productos.reduce((s, p) => s + Number(p.precioCompra) * p.stockActual, 0),
+      totalProductos: activos(db).length,
+      stockBajo: activos(db).filter((p) => p.stockActual <= p.stockMinimo).length,
+      valorInventario: activos(db).reduce((s, p) => s + Number(p.precioCompra) * p.stockActual, 0),
       numeroVentas: ventas.length,
       totalVentas: ventas.reduce((s, v) => s + Number(v.total), 0),
       numeroMovimientos: db.movimientos.filter((m) => m.createdAt >= desde).length,
@@ -514,7 +816,7 @@ export async function demoRequest(method: string, path: string, body?: Body): Pr
       for (const it of v.items) vendidas.set(it.productoId, (vendidas.get(it.productoId) ?? 0) + it.cantidad);
     }
     const sugerencias = calcularSugerencias(
-      db.productos.map((p) => ({ id: p.id, nombre: p.nombre, stock: p.stockActual, minimo: p.stockMinimo, vendidas: vendidas.get(p.id) ?? 0 }))
+      activos(db).map((p) => ({ id: p.id, nombre: p.nombre, stock: p.stockActual, minimo: p.stockMinimo, vendidas: vendidas.get(p.id) ?? 0 }))
     );
     return { resumen: resumenPorReglas(sugerencias), fuente: "reglas", sugerencias };
   }

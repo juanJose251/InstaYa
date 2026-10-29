@@ -10,7 +10,11 @@ const post = (path: string, body: Json) => demoRequest("POST", path, body) as Pr
 beforeEach(() => {
   localStorage.clear();
   resetDemoDb();
+  localStorage.setItem("instaya_token", "demo-token"); // sesión de la dueña (ADMIN)
 });
+
+const put = (path: string, body: Json) => demoRequest("PUT", path, body) as Promise<Json>;
+const del = (path: string) => demoRequest("DELETE", path) as Promise<Json>;
 
 describe("demoApi: auth", () => {
   it("acepta la cuenta demo y devuelve token, usuario y empresa", async () => {
@@ -230,3 +234,105 @@ describe("demoApi: top de productos y asistente de reposición", () => {
 function money(n: number) {
   return n.toFixed(2);
 }
+
+describe("demoApi: sesión y roles", () => {
+  it("sin sesión responde 401, igual que el backend", async () => {
+    localStorage.removeItem("instaya_token");
+    await expect(get("/productos")).rejects.toMatchObject({ status: 401 });
+  });
+
+  it("/usuarios/me devuelve la empresa y el estado del plan", async () => {
+    const me = await get("/usuarios/me");
+    expect(me.empresa.nombre).toContain("demo");
+    expect(me.suscripcion.estado).toBe("PRUEBA");
+    expect(me.suscripcion.diasRestantes).toBeGreaterThan(0);
+  });
+
+  it("un EMPLEADO entra con su cuenta, puede vender pero no crear productos (403)", async () => {
+    const login = await post("/auth/login", { email: "cajero@instaya.app", password: "cajero123" });
+    localStorage.setItem("instaya_token", login.token);
+    expect(login.usuario.rol).toBe("EMPLEADO");
+    await expect(post("/productos", { nombre: "X", precioCompra: 1, precioVenta: 2 })).rejects.toMatchObject({ status: 403 });
+    const venta = await post("/ventas", { items: [{ productoId: "demo-prod-1", cantidad: 1 }] });
+    expect(venta.venta.total).toBe("3.50");
+  });
+});
+
+describe("demoApi: editar y eliminar productos", () => {
+  it("edita precio y mínimo; un SKU de otro producto da 409", async () => {
+    const { producto } = await put("/productos/demo-prod-1", { precioVenta: 3.75, stockMinimo: 12 });
+    expect(producto).toMatchObject({ precioVenta: "3.75", stockMinimo: 12 });
+    await expect(put("/productos/demo-prod-1", { sku: "FRJ-1LB" })).rejects.toMatchObject({ status: 409 });
+  });
+
+  it("eliminar es baja lógica: desaparece de la lista y de los reportes, pero sus ventas siguen", async () => {
+    const antes = (await get("/reportes/resumen?rango=mes")).totalProductos;
+    await del("/productos/demo-prod-8");
+    const { productos } = await get("/productos");
+    expect(productos.some((p: Json) => p.id === "demo-prod-8")).toBe(false);
+    expect((await get("/reportes/resumen?rango=mes")).totalProductos).toBe(antes - 1);
+    const { ventas } = await get("/ventas");
+    expect(ventas.some((v: Json) => v.items.some((it: Json) => it.productoId === "demo-prod-8"))).toBe(true);
+    await expect(post("/ventas", { items: [{ productoId: "demo-prod-8", cantidad: 1 }] })).rejects.toMatchObject({ status: 404 });
+  });
+});
+
+describe("demoApi: importación masiva", () => {
+  it("crea productos nuevos con categoría nueva y actualiza por SKU sin duplicar", async () => {
+    const res = await post("/productos/importar", {
+      productos: [
+        { nombre: "Café 400 g", sku: "CAF-400", categoria: "Bebidas calientes", precioCompra: 3, precioVenta: 4.5, stock: 12 },
+        { nombre: "Arroz 5 lb", sku: "arz-5lb", precioCompra: 2.7, precioVenta: 3.6, stock: 50 },
+      ],
+    });
+    expect(res).toEqual({ creados: 1, actualizados: 1, categoriasCreadas: 1, proveedoresCreados: 0 });
+    const { productos } = await get("/productos?q=arroz");
+    expect(productos).toHaveLength(1);
+    expect(productos[0]).toMatchObject({ precioVenta: "3.60", stockActual: 50 });
+    const { movimientos } = await get("/movimientos");
+    expect(movimientos.filter((m: Json) => m.motivo?.includes("mport"))).toHaveLength(2);
+  });
+
+  it("todo o nada: una fila mala no guarda ninguna y devuelve el detalle", async () => {
+    const antes = (await get("/productos")).productos.length;
+    await expect(
+      post("/productos/importar", { productos: [{ nombre: "Ok", precioCompra: 1, precioVenta: 2 }, { nombre: "", precioCompra: 1, precioVenta: 2 }] })
+    ).rejects.toMatchObject({ status: 400, data: { errores: [{ fila: 3, error: "Nombre requerido" }] } });
+    expect((await get("/productos")).productos.length).toBe(antes);
+  });
+});
+
+describe("demoApi: equipo, empresa y plan", () => {
+  it("crea un empleado y no deja que la dueña se desactive a sí misma", async () => {
+    const { usuario } = await post("/usuarios", { nombre: "Ana", email: "ana@tienda.com", password: "secreto1" });
+    expect(usuario).toMatchObject({ rol: "EMPLEADO", activo: true });
+    expect(usuario.password).toBeUndefined();
+    await expect(post("/usuarios", { nombre: "Ana 2", email: "ANA@tienda.com", password: "secreto1" })).rejects.toMatchObject({ status: 409 });
+    await expect(put("/usuarios/demo-user", { activo: false })).rejects.toMatchObject({ status: 400 });
+    const off = await put(`/usuarios/${usuario.id}`, { activo: false });
+    expect(off.usuario.activo).toBe(false);
+    await expect(post("/auth/login", { email: "ana@tienda.com", password: "secreto1" })).rejects.toMatchObject({ status: 403 });
+  });
+
+  it("edita los datos de la empresa", async () => {
+    const { empresa } = await put("/empresa", { nombre: "Tienda Nueva", telefono: "7777-0000" });
+    expect(empresa).toMatchObject({ nombre: "Tienda Nueva", telefono: "7777-0000" });
+  });
+
+  it("plan vencido = solo lectura (402); al pagar vuelve a registrar", async () => {
+    await post("/suscripcion/demo/vencer", {});
+    expect((await get("/suscripcion")).suscripcion.estado).toBe("VENCIDA");
+    await expect(post("/ventas", { total: 5 })).rejects.toMatchObject({ status: 402 });
+    expect((await get("/productos")).productos.length).toBeGreaterThan(0); // puede seguir viendo
+
+    const pago = await post("/suscripcion/demo/pagar", { meses: 1 });
+    expect(pago.suscripcion).toMatchObject({ plan: "BASICO", estado: "ACTIVA" });
+    expect((await post("/ventas", { total: 5 })).venta.total).toBe("5.00");
+  });
+
+  it("precios del plan de negocios", async () => {
+    const { precios } = await get("/suscripcion");
+    expect(precios).toMatchObject({ implementacion: 50, mensual: 10, diasPrueba: 15 });
+  });
+});
+

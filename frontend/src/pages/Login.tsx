@@ -1,5 +1,5 @@
 import { useState, FormEvent } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import Button from "../components/ui/Button";
 import Input from "../components/ui/Input";
@@ -10,6 +10,8 @@ import { DEMO_EMAIL, DEMO_PASSWORD } from "../lib/demoApi";
 export default function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const destino = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname ?? "/app";
   const [email, setEmail] = useState(DEMO ? DEMO_EMAIL : "");
   const [password, setPassword] = useState(DEMO ? DEMO_PASSWORD : "");
   const [error, setError] = useState("");
@@ -21,7 +23,7 @@ export default function Login() {
     setCargando(true);
     try {
       await login({ email, password });
-      navigate("/app", { replace: true });
+      navigate(destino.startsWith("/app") ? destino : "/app", { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al iniciar sesión");
     } finally {
@@ -33,6 +35,9 @@ export default function Login() {
     <div className="min-h-screen flex flex-col bg-gradient-to-b from-brand-700 to-brand-900">
       <div className="flex-1 flex flex-col justify-center px-6 py-12 max-w-md w-full mx-auto">
         <div className="mb-8 text-center">
+          <Link to="/" className="mb-4 inline-block text-xs font-semibold text-brand-100 hover:text-white">
+            ← Volver al inicio
+          </Link>
           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-white/10 ring-1 ring-white/20">
             <span className="text-3xl font-black text-accent-400">I!</span>
           </div>
@@ -45,7 +50,8 @@ export default function Login() {
           {DEMO && (
             <div className="mb-4">
               <Alert tone="info">
-                Demo pública: los datos se guardan solo en tu navegador. Ya están cargadas las credenciales de la cuenta demo.
+                Demo pública: los datos se guardan solo en tu navegador. Ya están cargadas las credenciales de la dueña (administradora).
+                Para ver el rol de empleado usa <b>cajero@instaya.app</b> / <b>cajero123</b>.
               </Alert>
             </div>
           )}
