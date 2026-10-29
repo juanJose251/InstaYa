@@ -14,6 +14,9 @@ import Configuracion from "./pages/Configuracion";
 import Catalogo from "./pages/Catalogo";
 import Equipo from "./pages/Equipo";
 import Plan from "./pages/Plan";
+import Comprar from "./pages/Comprar";
+import Gracias from "./pages/Gracias";
+import { LOCAL } from "./lib/sitio";
 
 // La importación se usa pocas veces (lector de Excel incluido): se carga aparte para no pesar en el arranque
 const Importar = lazy(() => import("./pages/Importar"));
@@ -43,7 +46,10 @@ function Protected({ children }: { children: ReactNode }) {
 export default function App() {
   return (
     <Routes>
-      <Route path="/" element={<Landing />} />
+      {/* En la app instalada no hay página de venta: se entra directo al panel */}
+      <Route path="/" element={LOCAL ? <Navigate to="/app" replace /> : <Landing />} />
+      <Route path="/comprar" element={<Comprar />} />
+      <Route path="/gracias" element={<Gracias />} />
       <Route path="/login" element={<Login />} />
       <Route path="/registro" element={<Register />} />
       <Route

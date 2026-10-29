@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { DEMO } from "../lib/api";
 import { PRECIOS } from "../lib/suscripcion";
+import { DESCARGA_URL, TIENDA } from "../lib/sitio";
 
 const funciones = [
   { icon: "▤", titulo: "Inventario en tiempo real", texto: "Cada venta descuenta el stock al instante. Sabes qué tienes sin contar estantes." },
@@ -12,13 +13,27 @@ const funciones = [
   { icon: "☺", titulo: "Tu equipo, con permisos", texto: "Tus cajeros venden; solo tú cambias precios y productos. Cada quien con su usuario." },
 ];
 
-const pasos = [
-  { n: "1", titulo: "Crea tu cuenta", texto: "Gratis y sin tarjeta. 15 días para probar todo." },
-  { n: "2", titulo: "Carga tu inventario", texto: "Desde Excel o con nuestra ayuda en la implementación." },
-  { n: "3", titulo: "Vende y controla", texto: "Desde el celular, la tablet o la computadora del mostrador." },
+const pasos = TIENDA
+  ? [
+      { n: "1", titulo: "Descarga e instala", texto: "Un solo instalador para Windows. 15 días gratis, sin tarjeta." },
+      { n: "2", titulo: "Carga tu inventario", texto: "Desde tu Excel en minutos, o te ayudamos con la implementación." },
+      { n: "3", titulo: "Compra tu licencia", texto: `$${PRECIOS.mensual} al mes con tarjeta. Pegas tu clave y listo.` },
+    ]
+  : [
+      { n: "1", titulo: "Crea tu cuenta", texto: "Gratis y sin tarjeta. 15 días para probar todo." },
+      { n: "2", titulo: "Carga tu inventario", texto: "Desde Excel o con nuestra ayuda en la implementación." },
+      { n: "3", titulo: "Vende y controla", texto: "Desde el celular, la tablet o la computadora del mostrador." },
+    ];
+
+const preguntasTienda = [
+  ["¿Qué necesito?", "Una computadora con Windows 10 u 11. El instalador trae todo: la app y su base de datos."],
+  ["¿Necesito internet?", "No. InstaYa! funciona sin internet; solo se conecta cuando hay señal para renovar tu licencia."],
+  ["¿Dónde quedan mis datos?", "En tu propia computadora. Para respaldarlos copias una carpeta; te explicamos cómo."],
+  ["¿Qué pasa si no renuevo?", "Tu cuenta queda en solo lectura: puedes ver y exportar todo. Nunca se borra tu información."],
+  ["¿Cómo pago?", `Con tarjeta de crédito o débito por Wompi: $${PRECIOS.mensual} al mes, sin contratos. Cancelas cuando quieras.`],
 ];
 
-const preguntas = [
+const preguntasNube = [
   ["¿Necesito computadora?", "No. InstaYa! funciona en cualquier celular con internet y se instala como una app desde el navegador."],
   ["¿Mis datos están seguros?", "Cada negocio tiene sus datos aislados: ningún otro cliente puede verlos. Hacemos respaldos diarios."],
   ["¿Qué pasa si no pago al terminar la prueba?", "Tu cuenta queda en solo lectura: puedes ver y exportar todo. Nunca borramos tu información."],
@@ -36,8 +51,68 @@ function Logo({ claro = false }: { claro?: boolean }) {
   );
 }
 
+/** Sitio de venta: prueba gratis (descarga) y plan Básico (licencia mensual con Wompi). */
+function PlanesTienda() {
+  const lista = (items: string[]) => (
+    <ul className="mt-5 space-y-2 text-sm text-slate-700">
+      {items.map((t) => (
+        <li key={t} className="flex gap-2">
+          <span className="text-green-600">✓</span>
+          {t}
+        </li>
+      ))}
+    </ul>
+  );
+  return (
+    <>
+      <div className="mx-auto mt-8 grid max-w-3xl gap-5 md:grid-cols-2">
+        <div className="flex flex-col rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
+          <p className="text-sm font-bold uppercase tracking-wide text-slate-500">Prueba gratis</p>
+          <p className="mt-2">
+            <span className="text-5xl font-black text-slate-900">$0</span>
+            <span className="text-slate-500"> · {PRECIOS.diasPrueba} días</span>
+          </p>
+          <p className="mt-1 text-sm text-slate-600">Todas las funciones, sin tarjeta. Al terminar, tus datos se quedan.</p>
+          {lista(["La app completa para Windows", "Inventario, ventas, alertas y reportes", "Importa tu Excel el primer día"])}
+          <a href={DESCARGA_URL} className="mt-auto block rounded-xl bg-white py-3 text-center font-bold text-brand-700 ring-2 ring-brand-700 hover:bg-brand-50">
+            Descargar para Windows
+          </a>
+          <Link to="/login" className="mt-2 text-center text-xs font-semibold text-slate-500 underline">
+            o prueba la demo en línea
+          </Link>
+        </div>
+
+        <div className="relative flex flex-col rounded-3xl bg-white p-6 shadow-xl ring-2 ring-brand-600">
+          <span className="absolute -top-3 right-5 rounded-full bg-accent-500 px-3 py-1 text-xs font-bold text-white">Más elegido</span>
+          <p className="text-sm font-bold uppercase tracking-wide text-brand-700">Plan Básico</p>
+          <p className="mt-2">
+            <span className="text-5xl font-black text-slate-900">${PRECIOS.mensual}</span>
+            <span className="text-slate-500"> /mes</span>
+          </p>
+          <p className="mt-1 text-sm text-slate-600">Pagas con tarjeta, mes a mes. Sin contratos.</p>
+          {lista([
+            "Usuarios ilimitados con roles",
+            "Funciona sin internet, datos en tu computadora",
+            "Importación y exportación a Excel",
+            "Actualizaciones incluidas",
+            "Soporte por WhatsApp y correo",
+          ])}
+          <Link to="/comprar" className="mt-6 block rounded-xl bg-brand-700 py-3 text-center font-bold text-white hover:bg-brand-800">
+            Comprar licencia
+          </Link>
+        </div>
+      </div>
+      <p className="mx-auto mt-5 max-w-xl text-center text-sm text-slate-600">
+        ¿Prefieres que lo hagamos por ti? <b>Implementación opcional de ${PRECIOS.implementacion}</b>: instalamos, cargamos tu inventario inicial y
+        capacitamos a tu personal.
+      </p>
+    </>
+  );
+}
+
 export default function Landing() {
   const { usuario } = useAuth();
+  const preguntas = TIENDA ? preguntasTienda : preguntasNube;
   const ctaPrincipal = usuario
     ? { to: "/app", label: "Ir a mi panel" }
     : DEMO
@@ -81,14 +156,22 @@ export default function Landing() {
               Deja el cuaderno y el Excel. InstaYa! controla tu stock, tus ventas y te avisa antes de que se te acabe la mercadería.
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
-              <Link to={ctaPrincipal.to} className="rounded-xl bg-accent-500 px-5 py-3 font-bold text-white shadow-lg hover:bg-accent-600">
-                {ctaPrincipal.label}
-              </Link>
+              {TIENDA ? (
+                <a href={DESCARGA_URL} className="rounded-xl bg-accent-500 px-5 py-3 font-bold text-white shadow-lg hover:bg-accent-600">
+                  Descargar gratis
+                </a>
+              ) : (
+                <Link to={ctaPrincipal.to} className="rounded-xl bg-accent-500 px-5 py-3 font-bold text-white shadow-lg hover:bg-accent-600">
+                  {ctaPrincipal.label}
+                </Link>
+              )}
               <a href="#precios" className="rounded-xl px-5 py-3 font-semibold text-white ring-1 ring-white/30 hover:bg-white/10">
                 Ver precios
               </a>
             </div>
-            <p className="mt-3 text-xs text-brand-200">Sin tarjeta · Sin contratos · Funciona en cualquier celular</p>
+            <p className="mt-3 text-xs text-brand-200">
+              {TIENDA ? `${PRECIOS.diasPrueba} días gratis · Windows 10/11 · Funciona sin internet` : "Sin tarjeta · Sin contratos · Funciona en cualquier celular"}
+            </p>
           </div>
 
           {/* Maqueta del teléfono con datos de ejemplo */}
@@ -183,6 +266,7 @@ export default function Landing() {
       <section id="precios" className="bg-gradient-to-b from-brand-50 to-white py-14">
         <div className="mx-auto max-w-5xl px-4">
           <h2 className="text-center text-2xl font-black text-slate-900">Un precio simple, pensado para la micro y pequeña empresa</h2>
+          {TIENDA ? <PlanesTienda /> : (
           <div className="mx-auto mt-8 max-w-md rounded-3xl bg-white p-6 shadow-xl ring-2 ring-brand-600">
             <p className="text-sm font-bold uppercase tracking-wide text-brand-700">Plan Básico</p>
             <p className="mt-2">
@@ -211,6 +295,7 @@ export default function Landing() {
               {ctaPrincipal.label}
             </Link>
           </div>
+          )}
           <p className="mx-auto mt-4 max-w-md text-center text-xs text-slate-500">
             Otras soluciones del mercado cuestan entre $19 y $45 al mes y están pensadas para empresas más grandes.
           </p>

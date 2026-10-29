@@ -12,19 +12,113 @@ import { textoEstado } from "../lib/suscripcion";
 interface PlanResponse {
   suscripcion: Suscripcion;
   precios: { implementacion: number; mensual: number; diasPrueba: number; moneda: string };
-  pago: { metodos: string[]; contacto: string; instrucciones: string };
+  pago: { metodos: string[]; contacto: string; instrucciones: string; tienda?: string | null };
 }
 
-const incluye = [
+interface LicenciaResponse {
+  licencia: { lic: string; negocio: string; email: string; vence: string } | null;
+  tienda: string | null;
+}
+
+const incluye = (local: boolean) => [
   "Usuarios ilimitados con roles (administrador y empleados)",
   "Inventario, ventas, movimientos y alertas de stock mínimo",
   "Reportes y exportación a Excel",
   "Asistente de reposición",
-  "Alojamiento en la nube, respaldos y actualizaciones",
+  local ? "Funciona sin internet; tus datos quedan en esta computadora" : "Alojamiento en la nube, respaldos y actualizaciones",
   "Soporte técnico por WhatsApp y correo",
 ];
 
 const fecha = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString("es-SV", { day: "numeric", month: "long", year: "numeric" }) : "—");
+
+/** Instalación local: activar la clave comprada, renovar en la tienda y traer la renovación. */
+function LicenciaCard({ tienda, alCambiar }: { tienda: string; alCambiar: () => Promise<void> }) {
+  const { data, recargar } = useData<LicenciaResponse>("/licencia");
+  const [clave, setClave] = useState("");
+  const [msg, setMsg] = useState<{ tono: "success" | "error" | "info"; texto: string } | null>(null);
+  const [ocupado, setOcupado] = useState(false);
+  const lic = data?.licencia;
+
+  async function correr(accion: () => Promise<string>) {
+    setMsg(null);
+    setOcupado(true);
+    try {
+      const texto = await accion();
+      await alCambiar();
+      recargar();
+      setMsg({ tono: "success", texto });
+    } catch (err) {
+      setMsg({ tono: "error", texto: err instanceof Error ? err.message : "Error" });
+    } finally {
+      setOcupado(false);
+    }
+  }
+
+  const activar = () =>
+    correr(async () => {
+      await api.post("/licencia", { clave });
+      setClave("");
+      return "Licencia activada. ¡Gracias por tu compra!";
+    });
+
+  const sincronizar = () =>
+    correr(async () => {
+      const r = await api.post<{ renovada: boolean }>("/licencia/sincronizar", {});
+      if (!r.renovada) throw new Error("Todavía no vemos un pago nuevo. Revisa tu conexión a internet o intenta en unos minutos.");
+      return "Licencia renovada.";
+    });
+
+  return (
+    <Card>
+      <h2 className="font-bold text-slate-900">Tu licencia</h2>
+      {lic ? (
+        <p className="mt-1 text-sm text-slate-600">
+          Código <b className="font-mono">{lic.lic}</b> · {lic.negocio} · vence el {fecha(lic.vence)}
+        </p>
+      ) : (
+        <p className="mt-1 text-sm text-slate-600">Compra tu licencia con tarjeta y pega aquí la clave que te damos al pagar.</p>
+      )}
+
+      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+        <a
+          href={lic ? `${tienda}/comprar?lic=${lic.lic}` : `${tienda}/comprar`}
+          target="_blank"
+          rel="noreferrer"
+          className="rounded-xl bg-accent-500 px-4 py-2.5 text-center text-sm font-semibold text-white hover:bg-accent-600"
+        >
+          {lic ? "Renovar ($10 / mes)" : "Comprar licencia ($10 / mes)"}
+        </a>
+        {lic && (
+          <Button variant="ghost" onClick={sincronizar} disabled={ocupado}>
+            Ya pagué: actualizar
+          </Button>
+        )}
+      </div>
+
+      <label className="mt-4 block text-sm font-semibold text-slate-700">
+        Clave de licencia
+        <textarea
+          value={clave}
+          onChange={(e) => setClave(e.target.value)}
+          rows={3}
+          placeholder="Pega aquí la clave completa"
+          className="mt-1 w-full rounded-xl border border-slate-300 p-2.5 font-mono text-xs"
+          data-testid="input-licencia"
+        />
+      </label>
+      <div className="mt-2">
+        <Button onClick={activar} disabled={ocupado || clave.trim().length < 20} fullWidth>
+          Activar
+        </Button>
+      </div>
+      {msg && (
+        <div className="mt-3">
+          <Alert tone={msg.tono}>{msg.texto}</Alert>
+        </div>
+      )}
+    </Card>
+  );
+}
 
 export default function Plan() {
   const { esAdmin, refrescar } = useAuth();
@@ -82,11 +176,17 @@ export default function Plan() {
               </p>
             </div>
             <p className="mt-1 text-sm text-slate-600">
-              + <b>${data.precios.implementacion}</b> de implementación, una sola vez: configuramos tu cuenta, cargamos tu inventario
-              inicial desde tu Excel o cuaderno y capacitamos a tu personal.
+              {data.pago.tienda ? (
+                <>Pagas con tarjeta, mes a mes y sin contratos. Implementación opcional de ${data.precios.implementacion}.</>
+              ) : (
+                <>
+                  + <b>${data.precios.implementacion}</b> de implementación, una sola vez: configuramos tu cuenta, cargamos tu inventario
+                  inicial desde tu Excel o cuaderno y capacitamos a tu personal.
+                </>
+              )}
             </p>
             <ul className="mt-3 space-y-1.5 text-sm text-slate-700">
-              {incluye.map((i) => (
+              {incluye(!!data.pago.tienda).map((i) => (
                 <li key={i} className="flex gap-2">
                   <span className="text-green-600">✓</span>
                   {i}
@@ -94,6 +194,8 @@ export default function Plan() {
               ))}
             </ul>
           </Card>
+
+          {data.pago.tienda && esAdmin && <LicenciaCard tienda={data.pago.tienda} alCambiar={async () => (await refrescar(), recargar())} />}
 
           <Card>
             <h2 className="font-bold text-slate-900">Cómo pagar</h2>
