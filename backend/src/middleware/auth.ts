@@ -4,6 +4,7 @@ import { env } from "../config/env";
 import { AppError } from "./error";
 import prisma from "../lib/prisma";
 import { Role } from "@prisma/client";
+import { calcularSuscripcion, Suscripcion } from "../lib/suscripcion";
 
 export interface AuthUser {
   id: string;
@@ -18,6 +19,7 @@ declare global {
   namespace Express {
     interface Request {
       user?: AuthUser;
+      suscripcion?: Suscripcion;
     }
   }
 }
@@ -30,6 +32,8 @@ export function signToken(user: { id: string; empresaId: string; email: string; 
   );
 }
 
+const ESCRITURA = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
 export async function authenticate(req: Request, _res: Response, next: NextFunction) {
   const header = req.headers.authorization;
   if (!header?.startsWith("Bearer ")) {
@@ -41,7 +45,14 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
     const payload = jwt.verify(token, env.jwtSecret) as jwt.JwtPayload;
     const usuario = await prisma.usuario.findFirst({
       where: { id: payload.sub as string, activo: true },
-      select: { id: true, empresaId: true, email: true, nombre: true, rol: true, empresa: { select: { activa: true } } },
+      select: {
+        id: true,
+        empresaId: true,
+        email: true,
+        nombre: true,
+        rol: true,
+        empresa: { select: { activa: true, plan: true, trialFin: true, suscripcionFin: true } },
+      },
     });
 
     if (!usuario || !usuario.empresa.activa) {
@@ -55,10 +66,19 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
       nombre: usuario.nombre,
       rol: usuario.rol,
     };
-    next();
+    req.suscripcion = calcularSuscripcion(usuario.empresa);
   } catch {
     return next(new AppError(401, "Token inválido o expirado"));
   }
+
+  // Prueba o mes pagado vencido: la cuenta queda en solo lectura (puede ver y exportar, no registrar).
+  // La ruta de suscripción queda libre para poder consultar cómo renovar.
+  if (req.suscripcion?.soloLectura && ESCRITURA.has(req.method) && !req.baseUrl.startsWith("/api/suscripcion")) {
+    return next(
+      new AppError(402, "Tu periodo de prueba o tu mes pagado terminó. Renueva el plan para seguir registrando (tus datos siguen disponibles).")
+    );
+  }
+  next();
 }
 
 export function requireRole(...roles: Role[]) {

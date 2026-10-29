@@ -26,6 +26,12 @@ enum SaleStatus {
   ANULADA
 }
 
+// Plan comercial del plan de negocios: 15 días de prueba, luego $10/mes (+ $50 de implementación única)
+enum PlanTipo {
+  PRUEBA
+  BASICO
+}
+
 // ============ MULTI-TENANT ============
 
 model Empresa {
@@ -37,6 +43,8 @@ model Empresa {
   email     String?   @unique
   activa    Boolean   @default(true)
   trialFin  DateTime? // fin de prueba gratuita 15 días
+  plan           PlanTipo  @default(PRUEBA)
+  suscripcionFin DateTime? // hasta cuándo está pagado el plan BASICO
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 

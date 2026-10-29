@@ -12,6 +12,9 @@ import reporteRoutes from "./routes/reportes";
 import categoriaRoutes from "./routes/categorias";
 import proveedorRoutes from "./routes/proveedores";
 import asistenteRoutes from "./routes/asistente";
+import suscripcionRoutes from "./routes/suscripcion";
+import empresaRoutes from "./routes/empresa";
+import plataformaRoutes from "./routes/plataforma";
 import { authLimiter } from "./middleware/rateLimit";
 import { docsRouter } from "./docs/openapi";
 
@@ -41,6 +44,9 @@ app.use("/api/reportes", reporteRoutes);
 app.use("/api/categorias", categoriaRoutes);
 app.use("/api/proveedores", proveedorRoutes);
 app.use("/api/asistente", asistenteRoutes);
+app.use("/api/suscripcion", suscripcionRoutes);
+app.use("/api/empresa", empresaRoutes);
+app.use("/api/plataforma", authLimiter, plataformaRoutes);
 
 // 404 y errores
 app.use(notFound);

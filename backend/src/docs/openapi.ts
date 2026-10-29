@@ -52,11 +52,15 @@ export const openapi = {
     title: "InstaYa! API",
     version: "1.0.0",
     description:
-      "API REST multi-tenant de inventarios para PYMES. Todas las rutas (salvo auth y health) exigen JWT y filtran por la empresa del token.",
+      "API REST multi-tenant de inventarios para PYMES. Todas las rutas (salvo auth y health) exigen JWT y filtran por la empresa del token. " +
+      "Si la prueba de 15 días o el mes pagado vencen, la cuenta queda en solo lectura: las escrituras responden 402 hasta renovar el plan.",
   },
   servers: [{ url: "/api" }],
   components: {
-    securitySchemes: { bearerAuth: { type: "http", scheme: "bearer", bearerFormat: "JWT" } },
+    securitySchemes: {
+      bearerAuth: { type: "http", scheme: "bearer", bearerFormat: "JWT" },
+      platformKey: { type: "apiKey", in: "header", name: "x-platform-key", description: "Solo el operador del SaaS (PLATFORM_KEY)" },
+    },
     schemas: {
       Producto: {
         type: "object",
@@ -104,6 +108,30 @@ export const openapi = {
           },
         },
       },
+      FilaImportacion: {
+        type: "object",
+        required: ["nombre", "precioCompra", "precioVenta"],
+        properties: {
+          nombre: { type: "string" },
+          sku: { type: "string", description: "Si existe en tu empresa, el producto se actualiza en vez de duplicarse" },
+          categoria: { type: "string", description: "Nombre; se crea si no existe" },
+          proveedor: { type: "string", description: "Nombre; se crea si no existe" },
+          precioCompra: { type: "number" },
+          precioVenta: { type: "number" },
+          stock: { type: "integer", description: "Stock actual contado" },
+          stockMinimo: { type: "integer" },
+        },
+      },
+      Suscripcion: {
+        type: "object",
+        properties: {
+          plan: { type: "string", enum: ["PRUEBA", "BASICO"] },
+          estado: { type: "string", enum: ["PRUEBA", "ACTIVA", "VENCIDA"] },
+          venceEl: { type: "string", format: "date-time", nullable: true },
+          diasRestantes: { type: "integer", nullable: true },
+          soloLectura: { type: "boolean" },
+        },
+      },
       Sugerencia: {
         type: "object",
         properties: {
@@ -127,7 +155,68 @@ export const openapi = {
     "/auth/login": {
       post: { tags: ["Auth"], summary: "Iniciar sesión", responses: { 200: { description: "Devuelve token" }, 401: { description: "Credenciales inválidas" }, 429: { description: "Demasiados intentos" } } },
     },
-    "/usuarios/me": { get: { tags: ["Usuarios"], summary: "Usuario actual", security: auth, responses: { 200: { description: "OK" } } } },
+    "/usuarios/me": {
+      get: { tags: ["Usuarios"], summary: "Usuario actual, su empresa y el estado del plan", security: auth, responses: { 200: { description: "OK" } } },
+    },
+    "/usuarios": {
+      get: { tags: ["Usuarios"], summary: "Equipo de mi empresa", security: auth, responses: { 200: { description: "OK" } } },
+      post: {
+        tags: ["Usuarios"],
+        summary: "Crear empleado (solo ADMIN)",
+        security: auth,
+        responses: { 201: { description: "Creado" }, 403: { description: "Sin permiso" }, 409: { description: "Correo repetido" } },
+      },
+    },
+    "/usuarios/{id}": {
+      put: {
+        tags: ["Usuarios"],
+        summary: "Cambiar rol, activar/desactivar o restablecer contraseña (solo ADMIN)",
+        security: auth,
+        parameters: [idParam],
+        responses: { 200: { description: "Actualizado" }, 400: { description: "No puedes desactivarte a ti mismo" }, 404: { description: "No es de tu empresa" } },
+      },
+    },
+    "/empresa": {
+      get: { tags: ["Empresa"], summary: "Datos de mi empresa", security: auth, responses: { 200: { description: "OK" } } },
+      put: { tags: ["Empresa"], summary: "Editar datos del negocio (solo ADMIN)", security: auth, responses: { 200: { description: "OK" } } },
+    },
+    "/suscripcion": {
+      get: {
+        tags: ["Plan y facturación"],
+        summary: "Estado del plan, precios ($50 implementación + $10/mes) y cómo pagar",
+        security: auth,
+        responses: { 200: ok({ type: "object", properties: { suscripcion: ref("Suscripcion") } }) },
+      },
+    },
+    "/productos/importar": {
+      post: {
+        tags: ["Productos"],
+        summary: "Importación masiva desde hoja de cálculo (solo ADMIN, todo o nada)",
+        security: auth,
+        requestBody: {
+          required: true,
+          content: { "application/json": { schema: { type: "object", properties: { productos: { type: "array", maxItems: 1000, items: ref("FilaImportacion") } } } } },
+        },
+        responses: {
+          201: { description: "Resumen: creados, actualizados, categorías y proveedores creados" },
+          400: { description: "Filas con errores (no se guardó nada)" },
+          402: { description: "Plan vencido: solo lectura" },
+        },
+      },
+    },
+    "/plataforma/empresas": {
+      get: { tags: ["Plataforma (operador)"], summary: "Todas las empresas y su plan", security: [{ platformKey: [] }], responses: { 200: { description: "OK" }, 401: { description: "Clave inválida" } } },
+    },
+    "/plataforma/empresas/{id}/activar": {
+      post: {
+        tags: ["Plataforma (operador)"],
+        summary: "Registrar un pago: activa el plan Básico por N meses",
+        security: [{ platformKey: [] }],
+        parameters: [idParam],
+        requestBody: { content: { "application/json": { schema: { type: "object", properties: { meses: { type: "integer", minimum: 1, maximum: 24 } } } } } },
+        responses: { 200: { description: "Activado" }, 401: { description: "Clave inválida" }, 404: { description: "No existe" } },
+      },
+    },
     "/productos": {
       get: crudList("Productos", "productos", "Producto", [
         { name: "q", in: "query", schema: { type: "string" } },

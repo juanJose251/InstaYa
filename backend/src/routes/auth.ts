@@ -5,6 +5,7 @@ import prisma from "../lib/prisma";
 import { asyncHandler } from "../lib/asyncHandler";
 import { signToken } from "../middleware/auth";
 import { AppError } from "../middleware/error";
+import { calcularSuscripcion } from "../lib/suscripcion";
 
 const router = Router();
 
@@ -81,8 +82,11 @@ router.post(
       empresa: {
         id: empresaCreada.id,
         nombre: empresaCreada.nombre,
+        giro: empresaCreada.giro,
         trialFin: empresaCreada.trialFin,
+        plan: empresaCreada.plan,
       },
+      suscripcion: calcularSuscripcion(empresaCreada),
     });
   })
 );
@@ -125,7 +129,14 @@ router.post(
     res.json({
       token,
       usuario: { id: usuario.id, nombre: usuario.nombre, email: usuario.email, rol: usuario.rol },
-      empresa: { id: usuario.empresa.id, nombre: usuario.empresa.nombre, trialFin: usuario.empresa.trialFin },
+      empresa: {
+        id: usuario.empresa.id,
+        nombre: usuario.empresa.nombre,
+        giro: usuario.empresa.giro,
+        trialFin: usuario.empresa.trialFin,
+        plan: usuario.empresa.plan,
+      },
+      suscripcion: calcularSuscripcion(usuario.empresa),
     });
   })
 );

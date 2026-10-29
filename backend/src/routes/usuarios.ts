@@ -12,10 +12,18 @@ const router = Router();
 
 router.use(authenticate);
 
-// GET /api/usuarios/me — perfil del usuario autenticado
-router.get("/me", (req: Request, res: Response) => {
-  res.json({ usuario: req.user });
-});
+// GET /api/usuarios/me — perfil del usuario autenticado, su empresa y el estado del plan
+// (el front lo usa al recargar la página para no perder el nombre de la empresa ni el aviso del plan)
+router.get(
+  "/me",
+  asyncHandler(async (req: Request, res: Response) => {
+    const empresa = await prisma.empresa.findFirst({
+      where: { id: req.user!.empresaId },
+      select: { id: true, nombre: true, giro: true, direccion: true, telefono: true, trialFin: true, plan: true, suscripcionFin: true },
+    });
+    res.json({ usuario: req.user, empresa: empresa ?? null, suscripcion: req.suscripcion });
+  })
+);
 
 // GET /api/usuarios — listar usuarios de MI empresa (multi-tenant)
 router.get(
@@ -67,6 +75,38 @@ router.post(
     });
 
     res.status(201).json({ usuario });
+  })
+);
+
+const updateUserSchema = z
+  .object({
+    nombre: z.string().min(2, "Nombre requerido").optional(),
+    rol: z.enum(["ADMIN", "EMPLEADO"]).optional(),
+    activo: z.boolean().optional(),
+    password: z.string().min(6, "Mínimo 6 caracteres").optional(),
+  })
+  .strict();
+
+// PUT /api/usuarios/:id — cambiar rol, desactivar/reactivar o restablecer contraseña (solo ADMIN, solo de MI empresa)
+router.put(
+  "/:id",
+  requireRole(Role.ADMIN),
+  asyncHandler(async (req, res) => {
+    const data = updateUserSchema.parse(req.body);
+    const { empresaId, id: yo } = req.user!;
+    const usuario = await prisma.usuario.findFirst({ where: { id: req.params.id, empresaId } });
+    if (!usuario) throw new AppError(404, "Usuario no encontrado");
+    // Evita que la empresa se quede sin administrador por error
+    if (usuario.id === yo && (data.activo === false || data.rol === "EMPLEADO")) {
+      throw new AppError(400, "No puedes desactivarte ni quitarte el rol de administrador a ti mismo");
+    }
+    const { password, ...resto } = data;
+    const actualizado = await prisma.usuario.update({
+      where: { id: usuario.id },
+      data: { ...resto, ...(password ? { passwordHash: await bcrypt.hash(password, 10) } : {}) },
+      select: { id: true, nombre: true, email: true, rol: true, activo: true, createdAt: true },
+    });
+    res.json({ usuario: actualizado });
   })
 );
 

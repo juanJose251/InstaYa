@@ -148,4 +148,39 @@ describe("inventario y ventas contra PostgreSQL", () => {
     const topB = await request(app).get("/api/reportes/top-productos").set("Authorization", b.token);
     expect(topB.body.productos).toEqual([]);
   });
+
+  it("importación: crea categorías y productos con stock, y al reimportar actualiza sin duplicar", async () => {
+    const hoja = [
+      { nombre: "Imp Café 400 g", sku: "IMP-CAF", categoria: "Imp Bebidas calientes", precioCompra: 3, precioVenta: 4.5, stock: 12, stockMinimo: 3 },
+      { nombre: "Imp Té 20 u", sku: "IMP-TE", categoria: "imp bebidas calientes", precioCompra: 1, precioVenta: 1.75, stock: 0 },
+    ];
+    const r1 = await request(app).post("/api/productos/importar").set("Authorization", a.token).send({ productos: hoja });
+    expect(r1.status).toBe(201);
+    expect(r1.body).toMatchObject({ creados: 2, actualizados: 0, categoriasCreadas: 1 });
+
+    const r2 = await request(app)
+      .post("/api/productos/importar")
+      .set("Authorization", a.token)
+      .send({ productos: [{ ...hoja[0], precioVenta: 4.75, stock: 20 }] });
+    expect(r2.body).toMatchObject({ creados: 0, actualizados: 1 });
+
+    const cafes = await prisma.producto.findMany({ where: { empresaId: a.empresaId, sku: "IMP-CAF" } });
+    expect(cafes).toHaveLength(1);
+    expect(cafes[0].stockActual).toBe(20);
+    expect(Number(cafes[0].precioVenta)).toBe(4.75);
+    const movs = await prisma.movimientoStock.findMany({ where: { productoId: cafes[0].id }, orderBy: { createdAt: "asc" } });
+    expect(movs.map((m) => m.tipo)).toEqual(["ENTRADA", "AJUSTE"]);
+  });
+
+  it("al vencer la prueba la cuenta queda en solo lectura (402) y al activar el plan vuelve a registrar", async () => {
+    await prisma.empresa.update({ where: { id: b.empresaId }, data: { trialFin: new Date(Date.now() - 1000) } });
+    const bloqueada = await request(app).post("/api/ventas").set("Authorization", b.token).send({ total: 3 });
+    expect(bloqueada.status).toBe(402);
+    expect((await request(app).get("/api/productos").set("Authorization", b.token)).status).toBe(200);
+
+    await prisma.empresa.update({ where: { id: b.empresaId }, data: { plan: "BASICO", suscripcionFin: new Date(Date.now() + 30 * 864e5) } });
+    const ok = await request(app).post("/api/ventas").set("Authorization", b.token).send({ total: 3 });
+    expect(ok.status).toBe(201);
+  });
 });
+
