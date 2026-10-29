@@ -12,3 +12,6 @@ test-results/
 
 # Local Netlify folder
 .netlify
+
+# Resultados de scripts/verificar.bat
+verificacion/
