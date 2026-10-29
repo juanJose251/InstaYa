@@ -23,6 +23,8 @@ const LOGS = path.join(DATOS, "logs");
 const PID = path.join(DATOS, "instaya.pid");
 const PGBIN = path.join(APP, "pgsql", "bin");
 const exe = (n) => path.join(PGBIN, `${n}.exe`);
+// Tienda donde se compran y renuevan las licencias (se puede cambiar en config.json → "tienda").
+const TIENDA = "https://instaya-app.netlify.app";
 
 fs.mkdirSync(LOGS, { recursive: true });
 const LOG = path.join(LOGS, "instaya.log");
@@ -112,6 +114,7 @@ async function arrancar() {
     PLATFORM_KEY: c.platformKey,
     CLIENT_URL: url,
     STATIC_DIR: path.join(APP, "web"),
+    TIENDA_URL: c.tienda || TIENDA,
   });
   await import(pathToFileURL(path.join(backend, "dist", "server.js")).href);
   fs.writeFileSync(PID, String(process.pid));

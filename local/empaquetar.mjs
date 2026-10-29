@@ -34,9 +34,9 @@ sh("npm ci --omit=dev --no-audit --no-fund", outBack);
 sh(`npm install --no-save --no-audit --no-fund prisma@${versionPrisma}`, outBack);
 sh("npx prisma generate", outBack);
 
-// 2. Web: build normal (sin VITE_DEMO y sin VITE_API_URL: la API la sirve en el mismo puerto)
+// 2. Web: modo instalado (sin VITE_DEMO ni VITE_API_URL: la API la sirve en el mismo puerto; "/" va al panel)
 const front = path.join(RAIZ, "frontend");
-sh(`npx vite build --outDir "${path.join(OUT, "web")}" --emptyOutDir`, front, { VITE_DEMO: "", VITE_API_URL: "" });
+sh(`npx vite build --outDir "${path.join(OUT, "web")}" --emptyOutDir`, front, { VITE_DEMO: "", VITE_API_URL: "", VITE_LOCAL: "true", VITE_TIENDA: "" });
 
 // 3. Node portátil: el mismo node.exe que corre este script
 fs.mkdirSync(path.join(OUT, "node"));
@@ -84,4 +84,6 @@ const iscc = [
 ].find((p) => fs.existsSync(p));
 if (!iscc) throw new Error("Falta Inno Setup 6 (winget install JRSoftware.InnoSetup)");
 sh(`"${iscc}" /Q /DVersion=${VERSION} instaya.iss`, LOCAL);
+// Copia con nombre fijo: la que se sube al release de GitHub y enlaza la tienda (.../releases/latest/download/InstaYa-Setup.exe)
+fs.copyFileSync(path.join(SALIDA, `InstaYa-Setup-${VERSION}.exe`), path.join(SALIDA, "InstaYa-Setup.exe"));
 console.log(`\nListo: ${path.join(SALIDA, `InstaYa-Setup-${VERSION}.exe`)}`);
