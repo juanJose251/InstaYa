@@ -1,3 +1,4 @@
+import path from "node:path";
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
@@ -24,7 +25,8 @@ const app = express();
 // Detrás de un proxy (Docker, nginx, AWS) la IP real viene en X-Forwarded-For; el rate limit la necesita.
 app.set("trust proxy", 1);
 
-app.use(helmet());
+// En la instalación local se sirve por http://localhost: sin upgrade-insecure-requests, que forzaría https.
+app.use(env.staticDir ? helmet({ contentSecurityPolicy: { directives: { upgradeInsecureRequests: null } } }) : helmet());
 app.use(cors({ origin: env.clientUrl }));
 app.use(express.json());
 
@@ -47,6 +49,14 @@ app.use("/api/asistente", asistenteRoutes);
 app.use("/api/suscripcion", suscripcionRoutes);
 app.use("/api/empresa", empresaRoutes);
 app.use("/api/plataforma", authLimiter, plataformaRoutes);
+
+// Instalación local: la misma API sirve la web (SPA). Cualquier ruta que no sea /api devuelve index.html.
+if (env.staticDir) {
+  app.use(express.static(env.staticDir, { index: false }));
+  app.get(/^\/(?!api(\/|$)).*/, (_req, res) => {
+    res.sendFile(path.join(env.staticDir, "index.html"));
+  });
+}
 
 // 404 y errores
 app.use(notFound);

@@ -13,4 +13,7 @@ export const env = {
   platformKey: process.env.PLATFORM_KEY ?? "",
   soporteContacto: process.env.SOPORTE_CONTACTO ?? "soporte@instaya.app",
   anthropicModel: process.env.ANTHROPIC_MODEL ?? "claude-haiku-5-5",
+  // Instalación local (instalador de Windows): carpeta con el build del frontend que la API sirve en el mismo puerto.
+  // Vacía = solo API (el frontend lo sirve Netlify, Vite o nginx).
+  staticDir: process.env.STATIC_DIR ?? "",
 };
