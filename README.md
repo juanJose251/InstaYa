@@ -78,6 +78,7 @@ instaya/
 │   ├── e2e/             Playwright specs
 │   └── src/lib/         api client, demoApi (in-browser API for the demo), xlsx + hoja (spreadsheet read/write), pwa
 ├── docs/                FLUJO.md (how it works), PREGUNTAS.md (interview Q&A), DESPLIEGUE.md, screenshots/
+├── local/               Windows installer: launcher, Inno Setup script, packaging script
 ├── docker-compose.yml   PostgreSQL (+ API and web with `--profile full`)
 └── netlify.toml         demo deploy
 ```
@@ -119,6 +120,8 @@ npm run dev                 # http://localhost:5173 (proxies /api to :4000)
 ```
 
 Front end in demo mode (no backend): `VITE_DEMO=true npm run dev`.
+
+**Windows installer (offline, no Docker):** `local/` builds `InstaYa-Setup-<version>.exe`, which bundles a portable Node.js, an embedded PostgreSQL 16, the API and the web app on one port. See [`local/LEEME.md`](local/LEEME.md).
 
 ## Tests
 
