@@ -1,0 +1,11 @@
+{
+  "name": "instaya-instalador",
+  "private": true,
+  "description": "Arma el instalador de Windows (Node + PostgreSQL embebido + API + web).",
+  "scripts": {
+    "empaquetar": "node empaquetar.mjs"
+  },
+  "devDependencies": {
+    "@embedded-postgres/windows-x64": "16.14.0-beta.17"
+  }
+}

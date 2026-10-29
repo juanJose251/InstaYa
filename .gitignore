@@ -15,3 +15,8 @@ test-results/
 
 # Resultados de scripts/verificar.bat
 verificacion/
+
+# Instalador de Windows (local/empaquetar.mjs)
+local/salida/
+local/node_modules/
+local/instaya.ico
