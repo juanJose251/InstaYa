@@ -45,6 +45,7 @@ model Empresa {
   trialFin  DateTime? // fin de prueba gratuita 15 días
   plan           PlanTipo  @default(PRUEBA)
   suscripcionFin DateTime? // hasta cuándo está pagado el plan BASICO
+  licencia       String?   // instalación local: última clave de licencia firmada (ver lib/licencia.ts)
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 

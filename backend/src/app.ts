@@ -16,6 +16,7 @@ import asistenteRoutes from "./routes/asistente";
 import suscripcionRoutes from "./routes/suscripcion";
 import empresaRoutes from "./routes/empresa";
 import plataformaRoutes from "./routes/plataforma";
+import licenciaRoutes from "./routes/licencia";
 import { authLimiter } from "./middleware/rateLimit";
 import { docsRouter } from "./docs/openapi";
 
@@ -49,6 +50,7 @@ app.use("/api/asistente", asistenteRoutes);
 app.use("/api/suscripcion", suscripcionRoutes);
 app.use("/api/empresa", empresaRoutes);
 app.use("/api/plataforma", authLimiter, plataformaRoutes);
+app.use("/api/licencia", licenciaRoutes);
 
 // Instalación local: la misma API sirve la web (SPA). Cualquier ruta que no sea /api devuelve index.html.
 if (env.staticDir) {

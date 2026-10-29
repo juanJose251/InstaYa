@@ -16,4 +16,7 @@ export const env = {
   // Instalación local (instalador de Windows): carpeta con el build del frontend que la API sirve en el mismo puerto.
   // Vacía = solo API (el frontend lo sirve Netlify, Vite o nginx).
   staticDir: process.env.STATIC_DIR ?? "",
+  // Tienda donde se compran y renuevan las licencias de la instalación local (p. ej. https://instaya-app.netlify.app).
+  // Vacía = sin licencias (el plan lo activa el operador con /api/plataforma).
+  tiendaUrl: (process.env.TIENDA_URL ?? "").replace(/\/$/, ""),
 };

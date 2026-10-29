@@ -20,3 +20,6 @@ verificacion/
 local/salida/
 local/node_modules/
 local/instaya.ico
+
+# Llave privada de licencias (nunca a git)
+.claves/

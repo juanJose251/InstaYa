@@ -72,8 +72,8 @@ export async function authenticate(req: Request, _res: Response, next: NextFunct
   }
 
   // Prueba o mes pagado vencido: la cuenta queda en solo lectura (puede ver y exportar, no registrar).
-  // La ruta de suscripción queda libre para poder consultar cómo renovar.
-  if (req.suscripcion?.soloLectura && ESCRITURA.has(req.method) && !req.baseUrl.startsWith("/api/suscripcion")) {
+  // Las rutas de suscripción y licencia quedan libres para poder renovar.
+  if (req.suscripcion?.soloLectura && ESCRITURA.has(req.method) && !req.baseUrl.startsWith("/api/suscripcion") && !req.baseUrl.startsWith("/api/licencia")) {
     return next(
       new AppError(402, "Tu periodo de prueba o tu mes pagado terminó. Renueva el plan para seguir registrando (tus datos siguen disponibles).")
     );
