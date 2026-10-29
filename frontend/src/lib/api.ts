@@ -1,4 +1,5 @@
 import { demoRequest } from "./demoApi";
+import { LOCAL } from "./sitio";
 
 // Demo pública: sin servidor, los datos viven en el navegador (ver demoApi.ts).
 export const DEMO = import.meta.env.VITE_DEMO === "true";
@@ -53,7 +54,18 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  const res = await fetch(`${API_URL}/api${path}`, { ...options, headers });
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}/api${path}`, { ...options, headers });
+  } catch {
+    // fetch solo falla así cuando no hay respuesta del servidor (apagado o sin red), no por errores HTTP
+    throw new ApiError(
+      0,
+      LOCAL
+        ? "InstaYa! no está abierto en esta computadora. Ábrelo con el acceso directo \"InstaYa!\" y vuelve a intentar."
+        : "No hay conexión con el servidor. Revisa tu internet y vuelve a intentar."
+    );
+  }
 
   if (res.status === 401) {
     clearToken();
