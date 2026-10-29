@@ -3,6 +3,10 @@ import { demoRequest } from "./demoApi";
 // Demo pública: sin servidor, los datos viven en el navegador (ver demoApi.ts).
 export const DEMO = import.meta.env.VITE_DEMO === "true";
 
+// Origen de la API cuando vive en otro dominio (p. ej. https://instaya-api.onrender.com).
+// Vacío = mismo origen: el proxy de Vite en desarrollo o nginx en Docker.
+const API_URL = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
+
 const TOKEN_KEY = "instaya_token";
 
 export function getToken(): string | null {
@@ -49,7 +53,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  const res = await fetch(`/api${path}`, { ...options, headers });
+  const res = await fetch(`${API_URL}/api${path}`, { ...options, headers });
 
   if (res.status === 401) {
     clearToken();
