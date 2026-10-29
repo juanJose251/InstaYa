@@ -22,8 +22,14 @@ Multi-tenant inventory management system for small businesses in El Salvador. Te
 - Sales with line items: the server computes the total from product prices, checks stock and decrements it **atomically**; cancelling a sale restores the stock
 - Reports: summary (sales total, inventory value, low-stock count) and **top-selling products** (SQL `JOIN` + `GROUP BY`)
 - **Restock assistant:** from the last 30 days of sales it estimates how many days each product's stock will last and how many units to order. The numbers come from a deterministic rule; an LLM (Anthropic API) only writes the summary, and the endpoint falls back to a rule-based summary when there is no API key or the call fails
+- **SaaS plan** (from the business plan): 15-day free trial, $50 one-time setup, $10/month. When the trial or the paid month ends the account becomes **read-only**: writes return `402`, but the business can still see and export everything; data is never deleted. A banner warns 5 days before
+- **Platform panel** for the operator (`/api/plataforma`, protected by an `x-platform-key` header, not by the customer JWT): list companies and activate the paid plan for N months after a manual payment (bank transfer, Wompi, N1co)
+- **Excel / CSV import** of the initial inventory (the $50 setup service): reads `.xlsx` and `.csv` in the browser with a small reader written from scratch (no library), recognises Spanish headers, shows a preview with errors per row and a downloadable template; the API applies it all-or-nothing, creates missing categories and suppliers, updates existing products by SKU or name and records the stock movements
+- **Export to Excel:** inventory and sales for the selected period
+- **Team management:** create employees, change role, deactivate (an admin can't deactivate themself), reset passwords; company settings
+- **PWA:** installable from the browser (manifest, icons, service worker)
 - Interactive API docs (Swagger UI at `/api/docs`, OpenAPI spec at `/api/docs/openapi.json`)
-- Mobile-first React front end
+- Mobile-first React front end with a public landing page (problem, features, pricing, FAQ)
 
 ## Architecture
 
@@ -49,7 +55,7 @@ React (Vite) ── /api ──▶ Express ──▶ Prisma ──▶ PostgreSQL
 - **AI:** Anthropic API (optional, for the restock summary)
 - **Testing:** Vitest + Supertest (unit, Prisma mocked), integration tests against a real PostgreSQL, Playwright (E2E)
 - **DevOps:** Docker (multi-stage images, nginx for the SPA), docker-compose, GitHub Actions CI
-- **Mobile app:** React Native *(planned)*
+- **Mobile:** installable PWA; React Native *(planned)*
 
 ## Project structure
 
@@ -61,16 +67,16 @@ instaya/
 │   └── src/
 │       ├── app.ts       Express app (no listen, so it can be tested)
 │       ├── server.ts    starts the server
-│       ├── middleware/  auth, tenant, error, rateLimit
-│       ├── routes/      auth, usuarios, productos, categorias, proveedores, movimientos, ventas, reportes, asistente
-│       ├── lib/         prisma client, asyncHandler, reposicion (restock rules + LLM summary)
+│       ├── middleware/  auth (JWT + read-only plan check), tenant, error, rateLimit
+│       ├── routes/      auth, usuarios, empresa, productos (+ import), categorias, proveedores, movimientos, ventas, reportes, asistente, suscripcion, plataforma
+│       ├── lib/         prisma client, asyncHandler, reposicion (restock rules + LLM summary), suscripcion (plan rules)
 │       ├── docs/        OpenAPI spec + Swagger UI
 │       ├── test/        unit suites (Prisma mocked)
 │       └── integration/ suites against a real PostgreSQL
 ├── frontend/
 │   ├── Dockerfile, nginx.conf
 │   ├── e2e/             Playwright specs
-│   └── src/lib/         api client + demoApi (in-browser API for the demo)
+│   └── src/lib/         api client, demoApi (in-browser API for the demo), xlsx + hoja (spreadsheet read/write), pwa
 ├── docs/                FLUJO.md (how it works), PREGUNTAS.md (interview Q&A), DESPLIEGUE.md, screenshots/
 ├── docker-compose.yml   PostgreSQL (+ API and web with `--profile full`)
 └── netlify.toml         demo deploy
@@ -117,10 +123,10 @@ Front end in demo mode (no backend): `VITE_DEMO=true npm run dev`.
 ## Tests
 
 ```bash
-cd backend  && npm test                  # 56 unit tests: auth, roles, tenant isolation, sales, catalog, restock rules
-cd backend  && npm run test:integration  # 6 tests against a real PostgreSQL (needs DATABASE_URL + migrations applied)
-cd frontend && npm test                  # 25 tests: demo API rules
-cd frontend && npm run test:e2e          # 6 Playwright flows on the demo (PW_CHANNEL=chrome uses your installed Chrome)
+cd backend  && npm test                  # 84 unit tests: auth, roles, tenant isolation, sales, catalog, restock, plan, import, team
+cd backend  && npm run test:integration  # 8 tests against a real PostgreSQL (needs DATABASE_URL + migrations applied)
+cd frontend && npm test                  # 44 tests: demo API rules and spreadsheet parsing
+cd frontend && npm run test:e2e          # 12 Playwright flows on the demo (PW_CHANNEL=chrome uses your installed Chrome)
 ```
 
 CI runs all of them on every push, plus the Docker image builds and a seed run.
@@ -132,20 +138,26 @@ Full, interactive reference at `/api/docs`.
 | Method | Path | Notes |
 |---|---|---|
 | POST | `/api/auth/register`, `/api/auth/login` | public, rate limited |
-| GET | `/api/usuarios/me` | current user |
-| GET / POST | `/api/usuarios` | list / create employees (POST: admin only) |
+| GET | `/api/usuarios/me` | current user, company and plan |
+| GET / POST / PUT | `/api/usuarios`, `/api/usuarios/:id` | list / create / update employees (writes: admin only) |
+| GET / PUT | `/api/empresa` | company settings (PUT: admin only) |
 | GET / POST / PUT / DELETE | `/api/productos` | writes: admin only; DELETE is a soft delete |
+| POST | `/api/productos/importar` | bulk import, all or nothing (admin only) |
 | GET / POST / PUT / DELETE | `/api/categorias`, `/api/proveedores` | writes: admin only |
 | GET / POST | `/api/movimientos` | stock movements |
 | GET / POST | `/api/ventas`, POST `/api/ventas/:id/anular` | sales (with items or quick total) |
 | GET | `/api/reportes/resumen?rango=hoy\|semana\|mes` | summary |
 | GET | `/api/reportes/top-productos?rango=` | top 5 products by units sold |
 | GET | `/api/asistente/reposicion` | restock suggestions + summary |
+| GET | `/api/suscripcion` | plan status, prices and how to pay |
+| GET / POST | `/api/plataforma/empresas`, `/api/plataforma/empresas/:id/activar` | operator only (`x-platform-key`) |
+
+Any write while the plan is expired returns `402 Payment Required`.
 
 ## Status and roadmap
 
-Done: data model, JWT auth, multi-tenant isolation, inventory, categories and suppliers, stock movements, sales with line items and cancellation, reports, restock assistant, OpenAPI docs, front end screens, unit / integration / E2E tests, Docker, CI.
-Not done yet: Excel import, PWA, payments, mobile app, production deployment of the backend (the plan is in [`docs/DESPLIEGUE.md`](docs/DESPLIEGUE.md)), editing and deleting products from the front end.
+Done: data model, JWT auth, multi-tenant isolation, inventory, categories and suppliers, stock movements, sales with line items and cancellation, reports, restock assistant, SaaS plan with trial and read-only mode, platform panel, Excel/CSV import and export, team management, landing page, PWA, OpenAPI docs, unit / integration / E2E tests, Docker, CI.
+Not done yet: production deployment of the backend (the plan is in [`docs/DESPLIEGUE.md`](docs/DESPLIEGUE.md)), automatic payments (Stripe doesn't operate in El Salvador; payments are confirmed by hand from the platform panel), electronic invoicing (DTE), React Native app.
 
 ## Decisions and problems
 
@@ -157,4 +169,6 @@ Not done yet: Excel import, PWA, payments, mobile app, production deployment of 
 - **Atomic stock decrement:** the first version read the stock, checked it, and then decremented it. Two simultaneous sales of the last unit could both pass the check and leave negative stock. The decrement is now a single `updateMany` with `stockActual >= cantidad` in its `WHERE`, so the database serialises the two writes and the loser gets a 400. An integration test fires 30 concurrent one-unit sales against a stock of 5 and asserts that exactly 5 succeed (without the guard, 11 of them went through). Stock movements use the same pattern (`increment` for entries, guarded `decrement` for exits).
 - **Tenant check on relations:** a product's `categoriaId` / `proveedorId` are looked up with the user's `empresaId` before saving. Without that, a user could attach another company's category by guessing its id.
 - **Raw SQL where it pays off:** top products and the restock query aggregate with `JOIN` / `GROUP BY` in PostgreSQL through `$queryRaw` tagged templates (values are bound as parameters, not concatenated) instead of loading every sale into memory.
+- **Read-only instead of lockout:** an expired plan blocks writes with `402` in the same `authenticate` middleware that already loads the company, but reads and exports keep working. A small business never loses access to its own data for a late payment.
+- **Spreadsheet reader without a library:** `.xlsx` is a zip of XML files; the browser's `DecompressionStream` inflates it, so the import adds no dependency to the bundle. It was checked against files written by openpyxl.
 - **LLM as an extra, not a dependency:** the reorder quantities are a deterministic rule that is unit tested; the model only phrases the summary. If the key is missing or the API call fails, the endpoint still answers.

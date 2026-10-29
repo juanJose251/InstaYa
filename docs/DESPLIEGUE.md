@@ -24,6 +24,8 @@ Variables de la API:
 | `JWT_SECRET` | secreto largo y aleatorio (obligatorio cambiarlo) |
 | `CLIENT_URL` | origen del frontend, para CORS |
 | `ANTHROPIC_API_KEY` | opcional; activa el resumen con IA del asistente de reposición |
+| `PLATFORM_KEY` | clave del operador para `/api/plataforma` (header `x-platform-key`). Larga y aleatoria; si falta, el panel responde 503 |
+| `SOPORTE_CONTACTO` | contacto que ve el cliente para pagar o pedir soporte (por defecto `soporte@instaya.app`) |
 
 El contenedor del backend ejecuta `prisma migrate deploy` al arrancar, así que las migraciones se aplican solas en cada despliegue.
 
@@ -34,3 +36,4 @@ El contenedor del backend ejecuta `prisma migrate deploy` al arrancar, así que 
 3. Comprobar `GET /api/health` y `/api/docs`.
 4. Publicar el frontend (sin `VITE_DEMO`) con `/api` apuntando a la API.
 5. Opcional: `npm run seed` una vez contra esa base para tener datos de demostración.
+6. Al recibir un pago: `curl -X POST https://<api>/api/plataforma/empresas/<id>/activar -H "x-platform-key: $PLATFORM_KEY" -H "Content-Type: application/json" -d '{"meses":1}'`.
