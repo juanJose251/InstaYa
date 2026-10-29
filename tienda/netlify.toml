@@ -1,0 +1,15 @@
+# Tienda de licencias (instaya-app.netlify.app): landing de venta + demo + funciones de pago.
+# Se publica desde esta carpeta con la CLI (ver LEEME.md); el frontend se compila aparte con VITE_TIENDA=true.
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache"
